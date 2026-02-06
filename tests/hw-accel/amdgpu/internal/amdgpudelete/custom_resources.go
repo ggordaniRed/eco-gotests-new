@@ -74,6 +74,7 @@ func (a *AMDGPUCustomResourceCleaner) listDeviceConfigs() (*amdgpuv1.DeviceConfi
 			return &amdgpuv1.DeviceConfigList{}, nil
 		}
 
+		klog.Errorf("failed to list AMD GPU DeviceConfigs in namespace %s: %v", a.Namespace, err)
 		klog.V(a.LogLevel).Infof("Error listing AMD GPU DeviceConfigs: %v", err)
 
 		return nil, err
@@ -150,6 +151,8 @@ func (a *AMDGPUCustomResourceCleaner) checkDeviceConfigRemoval(ctx context.Conte
 
 	err := a.APIClient.Client.List(ctx, currentList, client.InNamespace(a.Namespace))
 	if err != nil {
+		klog.Errorf("failed to list DeviceConfigs during removal check: %v", err)
+
 		return false, nil
 	}
 

@@ -12,6 +12,8 @@ import (
 func IsSingleNodeOpenShift(apiClient *clients.Settings) (bool, error) {
 	nodes, err := apiClient.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
+		klog.Errorf("failed to list nodes for SNO detection: %v", err)
+
 		return false, err
 	}
 

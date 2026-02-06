@@ -111,6 +111,8 @@ func getImageRegistryConfig(apiClient *clients.Settings) (*unstructured.Unstruct
 
 	err := apiClient.Client.Get(ctx, client.ObjectKey{Name: "cluster"}, imageRegistryConfig)
 	if err != nil {
+		klog.Errorf("failed to get image registry configuration: %v", err)
+
 		return nil, fmt.Errorf("failed to get image registry configuration: %w", err)
 	}
 
@@ -263,6 +265,8 @@ func verifyRegistryService(apiClient *clients.Settings) error {
 	service, err := apiClient.CoreV1Interface.Services("openshift-image-registry").Get(
 		ctx, "image-registry", metav1.GetOptions{})
 	if err != nil {
+		klog.Errorf("failed to get image registry service: %v", err)
+
 		return fmt.Errorf("image registry service not found: %w", err)
 	}
 
@@ -278,6 +282,7 @@ func verifyRegistryService(apiClient *clients.Settings) error {
 
 	err = apiClient.Client.List(ctx, routes, client.InNamespace("openshift-image-registry"))
 	if err != nil {
+		klog.Errorf("failed to list registry routes: %v", err)
 		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Could not check registry routes: %v", err)
 	} else if len(routes.Items) > 0 {
 		for _, route := range routes.Items {
@@ -333,6 +338,7 @@ func ResetRegistryToRemoved(apiClient *clients.Settings) error {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		imageRegistryConfig, err := getImageRegistryConfig(apiClient)
 		if err != nil {
+			klog.Errorf("failed to get image registry config: %v", err)
 			klog.V(amdgpuparams.AMDGPULogLevel).Infof("Could not get image registry config: %v", err)
 
 			return nil

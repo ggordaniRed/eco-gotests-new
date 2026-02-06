@@ -32,6 +32,7 @@ func LabelPresentOnAllNodes(apiClient *clients.Settings, nodeLabel, nodeLabelVal
 	// in all the nodes that match the nodeSelectors, look for specific label
 	// For example, look in all the worker nodes for a specific label with specific value
 	if err != nil {
+		klog.Errorf("failed to list nodes with selector %v: %v", nodeSelector, err)
 		klog.V(amdparams.AMDGPULogLevel).Infof("could not discover %v nodes, error encountered: '%v'",
 			nodeSelector, err)
 
@@ -70,6 +71,7 @@ func LabelPresentOnAtLeastOneNode(apiClient *clients.Settings,
 	// Check if at least one node matching the nodeSelector has the specific nodeLabel label set to true
 	// For example, look in all the worker nodes for specific label
 	if err != nil {
+		klog.Errorf("failed to list nodes with selector %v: %v", nodeSelector, err)
 		klog.V(amdparams.AMDGPULogLevel).Infof("could not discover %v nodes", nodeSelector)
 
 		return false, err

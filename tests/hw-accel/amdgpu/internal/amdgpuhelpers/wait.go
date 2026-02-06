@@ -71,7 +71,7 @@ func checkDriverInitContainer(initStatus corev1.ContainerStatus, podName string)
 	case initStatus.State.Terminated != nil:
 		if initStatus.State.Terminated.ExitCode == 0 {
 			klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-				"✅ driver-init completed for pod %s", podName)
+				"driver-init completed for pod %s", podName)
 
 			return driverInitResult{ready: true}
 		}
@@ -153,6 +153,8 @@ func checkNodesReady(apiClients *clients.Settings) (bool, error) {
 			return false, nil
 		}
 
+		klog.Errorf("failed to list nodes: %v", err)
+
 		return false, err
 	}
 
@@ -172,6 +174,8 @@ func checkNodesReady(apiClients *clients.Settings) (bool, error) {
 func checkOperatorsReady(ctx context.Context, apiClients *clients.Settings) (bool, error) {
 	configClient, err := configclient.NewForConfig(apiClients.Config)
 	if err != nil {
+		klog.Errorf("failed to create config client: %v", err)
+
 		return false, err
 	}
 
@@ -182,6 +186,8 @@ func checkOperatorsReady(ctx context.Context, apiClients *clients.Settings) (boo
 
 			return false, nil
 		}
+
+		klog.Errorf("failed to list cluster operators: %v", err)
 
 		return false, err
 	}
@@ -281,7 +287,7 @@ func WaitForPodRunningResilient(podBuilder *pod.Builder, timeout time.Duration, 
 				return false, nil
 			}
 
-			klog.V(amdgpuparams.AMDGPULogLevel).Infof("Pod %s not running yet: %v", podBuilder.Object.Name, err)
+			klog.Errorf("pod %s not running yet: %v", podBuilder.Object.Name, err)
 
 			return false, nil
 		},
@@ -349,7 +355,7 @@ func WaitForAMDGPUDriverReady(apiClient *clients.Settings, isSNO bool) error {
 		return fmt.Errorf("driver-container pods not ready: %w", err)
 	}
 
-	klog.V(amdgpuparams.AMDGPULogLevel).Info("✅ AMD GPU driver is ready")
+	klog.V(amdgpuparams.AMDGPULogLevel).Info("AMD GPU driver is ready")
 
 	return nil
 }
@@ -364,6 +370,8 @@ func waitForKMMBuildPodsComplete(ctx context.Context, apiClient *clients.Setting
 			if isConnectionError(err) {
 				return false, nil
 			}
+
+			klog.Errorf("failed to list KMM build pods in namespace %s: %v", amdgpuparams.AMDGPUNamespace, err)
 
 			return false, err
 		}
@@ -397,7 +405,7 @@ func waitForKMMBuildPodsComplete(ctx context.Context, apiClient *clients.Setting
 		}
 
 		if buildPodsCompleted {
-			klog.V(amdgpuparams.AMDGPULogLevel).Info("✅ All KMM build pods completed successfully")
+			klog.V(amdgpuparams.AMDGPULogLevel).Info(" All KMM build pods completed successfully")
 
 			return true, nil
 		}
@@ -417,6 +425,8 @@ func waitForDriverContainerPods(ctx context.Context, apiClient *clients.Settings
 				return false, nil
 			}
 
+			klog.Errorf("failed to list device-plugin pods in namespace %s: %v", amdgpuparams.AMDGPUNamespace, err)
+
 			return false, err
 		}
 
@@ -424,7 +434,7 @@ func waitForDriverContainerPods(ctx context.Context, apiClient *clients.Settings
 
 		if status.found && status.allRunning && status.count > 0 {
 			klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-				"✅ Driver is ready - %d device-plugin/node-labeller pods running", status.count)
+				"Driver is ready - %d device-plugin/node-labeller pods running", status.count)
 
 			return true, nil
 		}
@@ -456,6 +466,8 @@ func VerifyGPUHardwareReady(apiClient *clients.Settings, nodeName string) error 
 					return false, nil
 				}
 
+				klog.Errorf("failed to get node %s: %v", nodeName, err)
+
 				return false, err
 			}
 
@@ -467,7 +479,7 @@ func VerifyGPUHardwareReady(apiClient *clients.Settings, nodeName string) error 
 			}
 
 			klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-				"✅ Node %s has %d AMD GPU(s) available", nodeName, gpuCapacity.Value())
+				"Node %s has %d AMD GPU(s) available", nodeName, gpuCapacity.Value())
 
 			return true, nil
 		},
@@ -491,6 +503,8 @@ func WaitForNodeLabellerDriverInit(apiClient *clients.Settings, timeout time.Dur
 				if isConnectionError(err) {
 					return false, nil
 				}
+
+				klog.Errorf("failed to list node labeller pods in namespace %s: %v", amdgpuparams.AMDGPUNamespace, err)
 
 				return false, err
 			}
@@ -544,7 +558,7 @@ func evaluateNodeLabellerPods(podList *corev1.PodList) (bool, error) {
 // checkPodDriverInit checks the driver-init container status for a pod.
 func checkPodDriverInit(podItem *corev1.Pod) (bool, error) {
 	for _, initStatus := range podItem.Status.InitContainerStatuses {
-		if initStatus.Name != "driver-init" {
+		if strings.Contains(strings.ToLower(initStatus.Name), "driver-init") {
 			continue
 		}
 
@@ -562,7 +576,7 @@ func checkPodDriverInit(podItem *corev1.Pod) (bool, error) {
 	for _, containerStatus := range podItem.Status.ContainerStatuses {
 		if containerStatus.Name == "node-labeller-container" && containerStatus.Ready {
 			klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-				"✅ node-labeller-container is ready for pod %s", podItem.Name)
+				"node-labeller-container is ready for pod %s", podItem.Name)
 		}
 	}
 

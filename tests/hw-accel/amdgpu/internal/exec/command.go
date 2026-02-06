@@ -510,6 +510,8 @@ func (p *PodCommand) GetPodLogs() (string, error) {
 	logs, err := p.apiClient.CoreV1Interface.Pods(p.nsname).GetLogs(
 		p.name, &corev1.PodLogOptions{}).DoRaw(context.TODO())
 	if err != nil {
+		klog.Errorf("failed to get pod logs for %s/%s: %v", p.nsname, p.name, err)
+
 		return "", fmt.Errorf("failed to get pod logs: %w", err)
 	}
 
@@ -533,6 +535,7 @@ func (p *PodCommand) waitForPodCompletion(timeout time.Duration) error {
 			podStatus, err := p.apiClient.CoreV1Interface.Pods(p.nsname).Get(
 				ctx, p.name, metav1.GetOptions{})
 			if err != nil {
+				klog.Errorf("failed to get pod %s/%s status: %v", p.nsname, p.name, err)
 				time.Sleep(5 * time.Second)
 
 				continue

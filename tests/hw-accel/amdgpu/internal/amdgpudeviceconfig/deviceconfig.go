@@ -160,6 +160,7 @@ func createDeviceConfigBuilder(
 
 	builder, err := amdgpu.Pull(apiClient, deviceConfigName, amdgpuparams.AMDGPUNamespace)
 	if err != nil {
+		klog.Errorf("failed to pull DeviceConfig %s: %v", deviceConfigName, err)
 		klog.V(amdgpuparams.AMDGPULogLevel).Infof("DeviceConfig %s does not exist, will create new one", deviceConfigName)
 	} else if builder != nil {
 		return builder, nil
@@ -225,6 +226,7 @@ func DeleteDeviceConfig(apiClient *clients.Settings, deviceConfigName string) er
 
 	deviceConfigBuilder, err := amdgpu.Pull(apiClient, deviceConfigName, amdgpuparams.AMDGPUNamespace)
 	if err != nil {
+		klog.Errorf("failed to pull DeviceConfig %s for deletion: %v", deviceConfigName, err)
 		klog.V(amdgpuparams.AMDGPULogLevel).Infof("DeviceConfig %s not found, nothing to delete", deviceConfigName)
 
 		return nil

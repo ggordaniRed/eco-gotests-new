@@ -84,6 +84,8 @@ func getAMDGPUNodes(apiClient *clients.Settings) (*corev1.NodeList, error) {
 			LabelSelector: "feature.node.kubernetes.io/amd-gpu=true",
 		})
 	if err != nil {
+		klog.Errorf("failed to list AMD GPU nodes: %v", err)
+
 		return nil, fmt.Errorf("failed to list AMD GPU nodes: %w", err)
 	}
 

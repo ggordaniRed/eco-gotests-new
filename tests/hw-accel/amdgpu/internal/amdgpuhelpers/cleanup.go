@@ -133,6 +133,8 @@ func forceDeleteNamespace(apiClient *clients.Settings, nsName string) error {
 
 	namespaceObj, err := apiClient.CoreV1Interface.Namespaces().Get(ctx, nsName, metav1.GetOptions{})
 	if err != nil {
+		klog.Errorf("failed to get namespace %s: %v", nsName, err)
+
 		return err
 	}
 

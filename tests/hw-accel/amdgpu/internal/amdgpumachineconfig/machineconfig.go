@@ -157,6 +157,7 @@ func waitForMCPStableSNO(apiClient *clients.Settings, mcpName string, timeout ti
 func checkSNOMCPStatus(apiClient *clients.Settings, mcpName string) (bool, error) {
 	mcpBuilder := mco.NewMCPBuilder(apiClient, mcpName)
 	if mcpBuilder == nil {
+		klog.Errorf("failed to create MCP builder for %s", mcpName)
 		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to create MCP builder for %s (expected during SNO reboot)", mcpName)
 
 		return false, nil
@@ -164,6 +165,7 @@ func checkSNOMCPStatus(apiClient *clients.Settings, mcpName string) (bool, error
 
 	_, err := mcpBuilder.Get()
 	if err != nil {
+		klog.Errorf("failed to get MachineConfigPool %s: %v", mcpName, err)
 		klog.V(amdgpuparams.AMDGPULogLevel).Infof("API unavailable during SNO reboot (expected): %v", err)
 
 		return false, nil
@@ -176,6 +178,8 @@ func checkSNOMCPStatus(apiClient *clients.Settings, mcpName string) (bool, error
 func evaluateMCPStability(mcpBuilder *mco.MCPBuilder) (bool, error) {
 	mcpObj, err := mcpBuilder.Get()
 	if err != nil {
+		klog.Errorf("failed to get MachineConfigPool for stability evaluation: %v", err)
+
 		return false, nil
 	}
 
@@ -224,14 +228,14 @@ func waitForMCPUpdating(apiClient *clients.Settings, mcpName string, ctx context
 		ctx, 30*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 			mcpBuilder := mco.NewMCPBuilder(apiClient, mcpName)
 			if mcpBuilder == nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to create MCP builder for %s", mcpName)
+				klog.Errorf("failed to create MCP builder for %s", mcpName)
 
 				return false, nil
 			}
 
 			mcp, err := mcpBuilder.Get()
 			if err != nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error getting MachineConfigPool %s: %v", mcpName, err)
+				klog.Errorf("failed to get MachineConfigPool %s: %v", mcpName, err)
 
 				return false, nil
 			}
@@ -260,14 +264,14 @@ func waitForMCPStable(apiClient *clients.Settings, mcpName string, ctx context.C
 		ctx, 30*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 			mcpBuilder := mco.NewMCPBuilder(apiClient, mcpName)
 			if mcpBuilder == nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to create MCP builder for %s", mcpName)
+				klog.Errorf("failed to create MCP builder for %s during stability wait", mcpName)
 
 				return false, nil
 			}
 
 			mcp, err := mcpBuilder.Get()
 			if err != nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error getting MachineConfigPool %s: %v", mcpName, err)
+				klog.Errorf("failed to get MachineConfigPool %s during stability wait: %v", mcpName, err)
 
 				return false, nil
 			}

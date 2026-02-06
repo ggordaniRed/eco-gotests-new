@@ -9,6 +9,7 @@ import (
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/pod"
 	amdgpuparams "github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/params"
+	"k8s.io/klog/v2"
 )
 
 // PodsFromNamespaceByPrefixWithTimeout - Gets all pods in a namespace whose names start with a specified prefix.
@@ -26,6 +27,8 @@ func PodsFromNamespaceByPrefixWithTimeout(
 		case <-time.After(amdgpuparams.DefaultSleepInterval):
 			podBuilders, podsListErr := pod.List(apiClient, nsname)
 			if podsListErr != nil {
+				klog.Errorf("failed to list Pods in namespace '%s': %v", nsname, podsListErr)
+
 				return nil, fmt.Errorf("failed to list Pods in namespace '%s'.\n%w", nsname, podsListErr)
 			}
 
