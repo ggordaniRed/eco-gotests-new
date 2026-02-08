@@ -222,79 +222,110 @@ func (p *PodCommand) Run() error {
 }
 
 func (p *PodCommand) getContainerConfig() (*corev1.Container, error) {
-	var (
-		containerBuilder *pod.ContainerBuilder
-		container        *corev1.Container
-		err              error
-	)
-
-	switch p.executionMode {
-	case ShellCommand:
-		containerBuilder = pod.NewContainerBuilder(p.containerName, p.image, []string{"/bin/sh", "-c"})
-
-		container, err = containerBuilder.GetContainerCfg()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create shell container: %w", err)
-		}
-
-		container.Args = []string{strings.Join(p.commad, " ")}
-
-	case BashScript:
-		containerBuilder = pod.NewContainerBuilder(p.containerName, p.image, []string{"/bin/bash"})
-
-		container, err = containerBuilder.GetContainerCfg()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create bash container: %w", err)
-		}
-
-		container.Command = []string{"/bin/bash"}
-		container.Args = []string{"-c", p.script}
-
-	case DirectCommand:
-		if len(p.commad) == 0 {
-			return nil, fmt.Errorf("no command specified for DirectCommand mode")
-		}
-
-		containerBuilder = pod.NewContainerBuilder(p.containerName, p.image, []string{p.commad[0]})
-
-		container, err = containerBuilder.GetContainerCfg()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create direct container: %w", err)
-		}
-
-		container.Command = []string{p.commad[0]}
-		if len(p.commad) > 1 {
-			container.Args = p.commad[1:]
-		}
-
-	default:
-		return nil, fmt.Errorf("unknown execution mode: %v", p.executionMode)
+	container, err := p.createContainerByMode()
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply common configuration
 	container.Resources, err = p.resources.toResourceRequirements()
 	if err != nil {
+		klog.Errorf("failed to set resources: %v", err)
+
 		return nil, fmt.Errorf("failed to set resources: %w", err)
 	}
 
-	// Configure security context
-	if p.privileged {
-		klog.V(90).Infof("Setting privileged security context for container %s", p.containerName)
-
-		if container.SecurityContext == nil {
-			container.SecurityContext = &corev1.SecurityContext{}
-		}
-
-		if p.allowPrivilegeEscalation {
-			container.SecurityContext.AllowPrivilegeEscalation = &p.allowPrivilegeEscalation
-		}
-
-		container.SecurityContext.Privileged = &p.privileged
-	}
-
+	p.applySecurityContext(container)
 	container.Env = append(container.Env, p.envs...)
 
 	return container, nil
+}
+
+func (p *PodCommand) createContainerByMode() (*corev1.Container, error) {
+	switch p.executionMode {
+	case ShellCommand:
+		return p.createShellContainer()
+	case BashScript:
+		return p.createBashContainer()
+	case DirectCommand:
+		return p.createDirectContainer()
+	default:
+		klog.Errorf("unknown execution mode: %v", p.executionMode)
+
+		return nil, fmt.Errorf("unknown execution mode: %v", p.executionMode)
+	}
+}
+
+func (p *PodCommand) createShellContainer() (*corev1.Container, error) {
+	containerBuilder := pod.NewContainerBuilder(p.containerName, p.image, []string{"/bin/sh", "-c"})
+
+	container, err := containerBuilder.GetContainerCfg()
+	if err != nil {
+		klog.Errorf("failed to create shell container: %v", err)
+
+		return nil, fmt.Errorf("failed to create shell container: %w", err)
+	}
+
+	container.Args = []string{strings.Join(p.commad, " ")}
+
+	return container, nil
+}
+
+func (p *PodCommand) createBashContainer() (*corev1.Container, error) {
+	containerBuilder := pod.NewContainerBuilder(p.containerName, p.image, []string{"/bin/bash"})
+
+	container, err := containerBuilder.GetContainerCfg()
+	if err != nil {
+		klog.Errorf("failed to create bash container: %v", err)
+
+		return nil, fmt.Errorf("failed to create bash container: %w", err)
+	}
+
+	container.Command = []string{"/bin/bash"}
+	container.Args = []string{"-c", p.script}
+
+	return container, nil
+}
+
+func (p *PodCommand) createDirectContainer() (*corev1.Container, error) {
+	if len(p.commad) == 0 {
+		klog.Errorf("no command specified for DirectCommand mode")
+
+		return nil, fmt.Errorf("no command specified for DirectCommand mode")
+	}
+
+	containerBuilder := pod.NewContainerBuilder(p.containerName, p.image, []string{p.commad[0]})
+
+	container, err := containerBuilder.GetContainerCfg()
+	if err != nil {
+		klog.Errorf("failed to create direct container: %v", err)
+
+		return nil, fmt.Errorf("failed to create direct container: %w", err)
+	}
+
+	container.Command = []string{p.commad[0]}
+	if len(p.commad) > 1 {
+		container.Args = p.commad[1:]
+	}
+
+	return container, nil
+}
+
+func (p *PodCommand) applySecurityContext(container *corev1.Container) {
+	if !p.privileged {
+		return
+	}
+
+	klog.V(90).Infof("Setting privileged security context for container %s", p.containerName)
+
+	if container.SecurityContext == nil {
+		container.SecurityContext = &corev1.SecurityContext{}
+	}
+
+	if p.allowPrivilegeEscalation {
+		container.SecurityContext.AllowPrivilegeEscalation = &p.allowPrivilegeEscalation
+	}
+
+	container.SecurityContext.Privileged = &p.privileged
 }
 
 func (rs *ResourceSettings) toResourceRequirements() (corev1.ResourceRequirements, error) {
@@ -302,21 +333,25 @@ func (rs *ResourceSettings) toResourceRequirements() (corev1.ResourceRequirement
 	lims := corev1.ResourceList{}
 
 	for res, value := range rs.Requests {
-		q, err := resource.ParseQuantity(value)
+		parseQuantity, err := resource.ParseQuantity(value)
 		if err != nil {
+			klog.Errorf("invalid request %s=%q: %v", res, value, err)
+
 			return corev1.ResourceRequirements{}, fmt.Errorf("invalid request %s=%q: %w", res, value, err)
 		}
 
-		reqs[res] = q
+		reqs[res] = parseQuantity
 	}
 
 	for res, value := range rs.Limits {
-		q, err := resource.ParseQuantity(value)
+		parseQuantity, err := resource.ParseQuantity(value)
 		if err != nil {
+			klog.Errorf("invalid limit %s=%q: %v", res, value, err)
+
 			return corev1.ResourceRequirements{}, fmt.Errorf("invalid limit %s=%q: %w", res, value, err)
 		}
 
-		lims[res] = q
+		lims[res] = parseQuantity
 	}
 
 	return corev1.ResourceRequirements{Requests: reqs, Limits: lims}, nil
@@ -392,18 +427,24 @@ func (p *PodCommand) WithHostVolume(
 func (p *PodCommand) Execute() (string, error) {
 	err := p.Run()
 	if err != nil {
+		klog.Errorf("failed to create pod %s: %v", p.name, err)
+
 		return "", fmt.Errorf("failed to create pod: %w", err)
 	}
 
 	// Wait for pod to be running
 	err = p.ActualPod.WaitUntilRunning(2 * time.Minute)
 	if err != nil {
+		klog.Errorf("pod %s failed to start: %v", p.name, err)
+
 		return "", fmt.Errorf("pod failed to start: %w", err)
 	}
 
 	// Execute the command
 	output, err := p.ActualPod.ExecCommand([]string{"sh", "-c", strings.Join(p.commad, " ")})
 	if err != nil {
+		klog.Errorf("command execution failed on pod %s: %v", p.name, err)
+
 		return output.String(), fmt.Errorf("command execution failed: %w", err)
 	}
 
@@ -414,6 +455,8 @@ func (p *PodCommand) Execute() (string, error) {
 func (p *PodCommand) ExecuteAndCleanup(timeout time.Duration) (string, error) {
 	err := p.Run()
 	if err != nil {
+		klog.Errorf("failed to create pod %s: %v", p.name, err)
+
 		return "", fmt.Errorf("failed to create pod: %w", err)
 	}
 
@@ -468,6 +511,8 @@ func (p *PodCommand) ExecuteAndCleanup(timeout time.Duration) (string, error) {
 
 	output, logErr := p.GetPodLogs()
 	if logErr != nil {
+		klog.Errorf("failed to get pod logs for %s: %v", p.name, logErr)
+
 		return "", fmt.Errorf("failed to get pod logs: %w", logErr)
 	}
 
@@ -481,6 +526,9 @@ func (p *PodCommand) Cleanup(timeout time.Duration) error {
 	}
 
 	_, err := p.ActualPod.DeleteAndWait(timeout)
+	if err != nil {
+		klog.Errorf("failed to cleanup pod %s: %v", p.name, err)
+	}
 
 	return err
 }
@@ -504,6 +552,8 @@ func (p *PodCommand) WithEnv(name, value string) *PodCommand {
 // GetPodLogs retrieves the logs of the pod.
 func (p *PodCommand) GetPodLogs() (string, error) {
 	if p.ActualPod == nil {
+		klog.Errorf("cannot get logs: pod not created yet")
+
 		return "", fmt.Errorf("pod not created yet")
 	}
 
@@ -521,6 +571,8 @@ func (p *PodCommand) GetPodLogs() (string, error) {
 // waitForPodCompletion waits for a pod to complete (succeed or fail).
 func (p *PodCommand) waitForPodCompletion(timeout time.Duration) error {
 	if p.ActualPod == nil {
+		klog.Errorf("pod not created yet")
+
 		return fmt.Errorf("pod not created yet")
 	}
 
@@ -543,6 +595,8 @@ func (p *PodCommand) waitForPodCompletion(timeout time.Duration) error {
 
 			if podStatus.Status.Phase == corev1.PodSucceeded || podStatus.Status.Phase == corev1.PodFailed {
 				if podStatus.Status.Phase == corev1.PodFailed {
+					klog.Errorf("pod %s failed with phase: %s", p.name, podStatus.Status.Phase)
+
 					return fmt.Errorf("pod failed with phase: %s", podStatus.Status.Phase)
 				}
 

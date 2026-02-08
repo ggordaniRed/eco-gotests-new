@@ -297,6 +297,8 @@ func WaitForPodRunningResilient(podBuilder *pod.Builder, timeout time.Duration, 
 // WaitForPodsRunningResilient waits for multiple pods to be in Running state with resilient retry logic.
 func WaitForPodsRunningResilient(apiClient *clients.Settings, podBuilders []*pod.Builder, isSNO bool) error {
 	if len(podBuilders) == 0 {
+		klog.Errorf("no pods provided to wait for")
+
 		return fmt.Errorf("no pods provided to wait for")
 	}
 
@@ -314,6 +316,8 @@ func WaitForPodsRunningResilient(apiClient *clients.Settings, podBuilders []*pod
 		}
 
 		if err := WaitForPodRunningResilient(podBuilder, timeout, isSNO); err != nil {
+			klog.Errorf("failed waiting for pod %s: %v", podBuilder.Object.Name, err)
+
 			return fmt.Errorf("failed waiting for pod %s: %w", podBuilder.Object.Name, err)
 		}
 	}
@@ -348,10 +352,14 @@ func WaitForAMDGPUDriverReady(apiClient *clients.Settings, isSNO bool) error {
 	defer cancel()
 
 	if err := waitForKMMBuildPodsComplete(ctx, apiClient); err != nil {
+		klog.Errorf("KMM build pods did not complete: %v", err)
+
 		return fmt.Errorf("KMM build pods did not complete: %w", err)
 	}
 
 	if err := waitForDriverContainerPods(ctx, apiClient, isSNO); err != nil {
+		klog.Errorf("driver-container pods not ready: %v", err)
+
 		return fmt.Errorf("driver-container pods not ready: %w", err)
 	}
 
@@ -391,6 +399,8 @@ func waitForKMMBuildPodsComplete(ctx context.Context, apiClient *clients.Setting
 				case corev1.PodRunning, corev1.PodPending:
 					buildPodsCompleted = false
 				case corev1.PodFailed, corev1.PodUnknown:
+					klog.Errorf("build pod %s failed", podItem.Name)
+
 					return false, fmt.Errorf("build pod %s failed", podItem.Name)
 				case corev1.PodSucceeded:
 					buildPodsCompleted = true

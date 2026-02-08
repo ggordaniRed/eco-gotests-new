@@ -76,8 +76,12 @@ func VerifyAndConfigureInternalRegistry(apiClient *clients.Settings) error {
 		})
 	if err != nil {
 		if lastErr != nil {
+			klog.Errorf("failed to get image registry config after retries: %v (last: %v)", err, lastErr)
+
 			return fmt.Errorf("failed to get image registry config after retries: %w (last: %w)", err, lastErr)
 		}
+
+		klog.Errorf("failed to get image registry config: %v", err)
 
 		return fmt.Errorf("failed to get image registry config: %w", err)
 	}
@@ -123,6 +127,8 @@ func getImageRegistryConfig(apiClient *clients.Settings) (*unstructured.Unstruct
 func getRegistryManagementState(config *unstructured.Unstructured) (string, bool, error) {
 	managementState, found, err := unstructured.NestedString(config.Object, "spec", "managementState")
 	if err != nil {
+		klog.Errorf("failed to get image registry management state: %v", err)
+
 		return "", false, fmt.Errorf("failed to get image registry management state: %w", err)
 	}
 
@@ -170,12 +176,13 @@ func configureRegistryAsManaged(apiClient *clients.Settings, config *unstructure
 		err = updateRegistryConfig(apiClient, config)
 		if err != nil {
 			if errors.IsConflict(err) {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-					"Conflict updating registry config (attempt %d/%d): %v", attempt, maxRetries, err)
+				klog.Errorf("conflict updating registry config (attempt %d/%d): %v", attempt, maxRetries, err)
 				lastErr = err
 
 				continue
 			}
+
+			klog.Errorf("failed to update registry config: %v", err)
 
 			return err
 		}
@@ -186,6 +193,8 @@ func configureRegistryAsManaged(apiClient *clients.Settings, config *unstructure
 		return waitForImageRegistryAvailable(apiClient, 10*time.Minute)
 	}
 
+	klog.Errorf("failed to configure registry after %d attempts: %v", maxRetries, lastErr)
+
 	return fmt.Errorf("failed to configure registry after %d attempts: %w", maxRetries, lastErr)
 }
 
@@ -193,6 +202,8 @@ func configureRegistryAsManaged(apiClient *clients.Settings, config *unstructure
 func setRegistryManagementState(config *unstructured.Unstructured) error {
 	err := unstructured.SetNestedField(config.Object, "Managed", "spec", "managementState")
 	if err != nil {
+		klog.Errorf("failed to set image registry management state: %v", err)
+
 		return fmt.Errorf("failed to set image registry management state: %w", err)
 	}
 
@@ -203,6 +214,8 @@ func setRegistryManagementState(config *unstructured.Unstructured) error {
 func ensureRegistryStorage(config *unstructured.Unstructured) error {
 	storageConfig, storageFound, err := unstructured.NestedMap(config.Object, "spec", "storage")
 	if err != nil {
+		klog.Errorf("failed to check image registry storage configuration: %v", err)
+
 		return fmt.Errorf("failed to check image registry storage configuration: %w", err)
 	}
 
@@ -224,6 +237,8 @@ func setEmptyDirStorage(config *unstructured.Unstructured) error {
 
 	err := unstructured.SetNestedMap(config.Object, newStorageConfig, "spec", "storage")
 	if err != nil {
+		klog.Errorf("failed to set image registry storage: %v", err)
+
 		return fmt.Errorf("failed to set image registry storage: %w", err)
 	}
 
@@ -236,6 +251,8 @@ func updateRegistryConfig(apiClient *clients.Settings, config *unstructured.Unst
 
 	err := apiClient.Client.Update(ctx, config)
 	if err != nil {
+		klog.Errorf("failed to update image registry configuration: %v", err)
+
 		return fmt.Errorf("failed to update image registry configuration: %w", err)
 	}
 
@@ -248,6 +265,8 @@ func verifyRegistryAvailability(apiClient *clients.Settings) error {
 
 	err := waitForImageRegistryAvailable(apiClient, amdgpuparams.DefaultTimeout)
 	if err != nil {
+		klog.Errorf("image registry is not available: %v", err)
+
 		return fmt.Errorf("image registry is not available: %w", err)
 	}
 
@@ -308,16 +327,18 @@ func waitForImageRegistryAvailable(apiClient *clients.Settings, timeout time.Dur
 			LabelSelector: "docker-registry=default",
 		})
 	if err != nil {
+		klog.Errorf("timeout waiting for image registry availability: %v", err)
+
 		return fmt.Errorf("timeout waiting for image registry availability: %w", err)
 	}
 
 	err = verifyRegistryService(apiClient)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Registry service verification warning: %v", err)
+		klog.Errorf("registry service verification warning: %v", err)
 	}
 
 	if !podIsRunning {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Image registry pods are not running")
+		klog.Errorf("image registry pods are not running")
 
 		return fmt.Errorf("image registry pods are not running")
 	}
@@ -346,20 +367,23 @@ func ResetRegistryToRemoved(apiClient *clients.Settings) error {
 
 		err = unstructured.SetNestedField(imageRegistryConfig.Object, "Removed", "spec", "managementState")
 		if err != nil {
+			klog.Errorf("failed to set registry management state to Removed: %v", err)
+
 			return fmt.Errorf("failed to set registry management state to Removed: %w", err)
 		}
 
 		err = updateRegistryConfig(apiClient, imageRegistryConfig)
 		if err != nil {
 			if errors.IsConflict(err) {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-					"Conflict updating registry config (attempt %d/%d): %v", attempt, maxRetries, err)
+				klog.Errorf("conflict updating registry config (attempt %d/%d): %v", attempt, maxRetries, err)
 				lastErr = err
 
 				time.Sleep(retryInterval)
 
 				continue
 			}
+
+			klog.Errorf("failed to update registry config: %v", err)
 
 			return fmt.Errorf("failed to update registry config: %w", err)
 		}
@@ -368,6 +392,8 @@ func ResetRegistryToRemoved(apiClient *clients.Settings) error {
 
 		return nil
 	}
+
+	klog.Errorf("failed to reset registry after %d attempts: %v", maxRetries, lastErr)
 
 	return fmt.Errorf("failed to reset registry after %d attempts: %w", maxRetries, lastErr)
 }

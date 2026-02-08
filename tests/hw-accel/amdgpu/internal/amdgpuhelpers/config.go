@@ -315,7 +315,7 @@ func CreateBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	err := amdgpumachineconfig.CreateAMDGPUBlacklist(apiClient, "worker")
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("MachineConfig creation result: %v", err)
+		klog.Errorf("MachineConfig creation failed: %v", err)
 
 		return fmt.Errorf("MachineConfig creation requires cluster admin privileges or may already exist")
 	}
@@ -325,7 +325,7 @@ func CreateBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	mcpName, err := amdgpumachineconfig.DetermineMachineConfigPoolName(apiClient)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to determine MachineConfigPool name: %v", err)
+		klog.Errorf("failed to determine MachineConfigPool name: %v", err)
 
 		return fmt.Errorf("failed to determine correct MachineConfigPool name")
 	}
@@ -334,7 +334,7 @@ func CreateBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	err = amdgpumachineconfig.WaitForMachineConfigPoolStable(apiClient, mcpName, 60*time.Minute)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("MachineConfigPool stability check failed: %v", err)
+		klog.Errorf("MachineConfigPool %s stability check failed: %v", mcpName, err)
 
 		return fmt.Errorf("MachineConfigPool stability check failed - may need more time or manual intervention")
 	}
@@ -343,7 +343,7 @@ func CreateBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	err = amdgpuconfig.VerifyAMDGPUKernelModule(apiClient)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Kernel module verification failed (ignoring): %v", err)
+		klog.Errorf("Kernel module verification failed (ignoring): %v", err)
 	}
 
 	return nil

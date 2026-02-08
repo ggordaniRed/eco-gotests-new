@@ -60,6 +60,9 @@ func LabelPresentOnAllNodes(apiClient *clients.Settings, nodeLabel, nodeLabelVal
 	err = fmt.Errorf("not all (%v) nodes have the label '%s' with value '%s'", len(nodeBuilder),
 		nodeLabel, nodeLabelValue)
 
+	klog.Errorf("not all (%v) nodes have the label '%s' with value '%s'", len(nodeBuilder),
+		nodeLabel, nodeLabelValue)
+
 	return false, err
 }
 
@@ -90,6 +93,8 @@ func LabelPresentOnAtLeastOneNode(apiClient *clients.Settings,
 
 	err = fmt.Errorf("could not find one node with label '%s' set to true", nodeLabel)
 
+	klog.Errorf("could not find one node with label '%s' set to true", nodeLabel)
+
 	return false, err
 }
 
@@ -112,7 +117,10 @@ func LabelsExistOnAllNodes(labelNodes []*nodes.Builder,
 	waitGroup.Wait()
 
 	if len(errCh) > 0 {
-		return fmt.Errorf("errors encountered during labels exist on all nodes: %w", <-errCh)
+		err := <-errCh
+		klog.Errorf("errors encountered during labels exist on all nodes: %v", err)
+
+		return fmt.Errorf("errors encountered during labels exist on all nodes: %w", err)
 	}
 
 	return nil
@@ -144,6 +152,9 @@ func LabelsExistOnNode(parentCtx context.Context, labelNode *nodes.Builder, labe
 				}
 			}
 
+			klog.Errorf("timeout exceeded while checking labels exist on node %v. Missing labels are: %v",
+				labelNode.Object.Name, missingLabels)
+
 			errCh <- fmt.Errorf("timeout exceeded while checking "+
 				"labels exist on node %v. Missing labels are: %v", labelNode.Object.Name, missingLabels)
 
@@ -163,6 +174,9 @@ func LabelsExistOnNode(parentCtx context.Context, labelNode *nodes.Builder, labe
 					if checkAMDDeviceID && strings.HasSuffix(label, "device-id") {
 						deviceName, deviceFound := amdparams.DeviceIDsMap[labelVal]
 						if !deviceFound {
+							klog.Errorf("the device '%v' ('%v') isn't found in the list of supported devices",
+								labelVal, deviceName)
+
 							errCh <- fmt.Errorf("the device '%v' ('%v') isn't"+
 								" found in the list of supported devices", labelVal, deviceName)
 
@@ -212,6 +226,8 @@ func LabelsMissingOnAllNode(labelNodes []*nodes.Builder, labels []string,
 			allErrors = append(allErrors, err)
 		}
 
+		klog.Errorf("errors encountered during missing labels check: %v", errors.Join(allErrors...))
+
 		return fmt.Errorf("errors encountered during missing labels check: %w", errors.Join(allErrors...))
 	}
 
@@ -235,6 +251,8 @@ func LabelsMissingOnNode(parentCtx context.Context, labelNode *nodes.Builder, la
 	for {
 		select {
 		case <-ctx.Done():
+			klog.Errorf("some labels are still exist on node '%s': %v", labelNode.Object.Name, existingLabelsIter)
+
 			errCh <- fmt.Errorf("some labels are still exist on node '%s': %v", labelNode.Object.Name, existingLabelsIter)
 
 			return

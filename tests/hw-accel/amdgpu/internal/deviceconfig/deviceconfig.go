@@ -7,6 +7,7 @@ import (
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/amdgpu"
 	amdparams "github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/params"
+	"k8s.io/klog/v2"
 )
 
 // GetEnableNodeLabeller - Get the value of 'enableNodeLabeller' from the deviceConfig.
@@ -43,6 +44,8 @@ func SetEnableNodeLabeller(enable bool, builder *amdgpu.Builder, force bool) err
 
 	builder, updateErr := builder.Update(force)
 	if updateErr != nil {
+		klog.Errorf("failed to update DeviceConfig enableNodeLabeller to %v: %v", enable, updateErr)
+
 		return updateErr
 	}
 
@@ -54,6 +57,8 @@ func SetEnableNodeLabeller(enable bool, builder *amdgpu.Builder, force bool) err
 	for {
 		select {
 		case <-validateCtx.Done():
+			klog.Errorf("mismatch in enableNodeLabeller - Expected: '%v', Got: '%v'", enable, actualVal)
+
 			return fmt.Errorf("mismatch in enableNodeLabeller - Expected: '%v', Got: '%v'", enable, actualVal)
 		case <-time.After(amdparams.DefaultSleepInterval):
 			enableNodeLabeller := GetEnableNodeLabeller(builder)

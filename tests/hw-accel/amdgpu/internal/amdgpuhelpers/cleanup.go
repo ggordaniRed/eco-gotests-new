@@ -22,7 +22,7 @@ func DeleteBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	mcBuilder, err := mco.PullMachineConfig(apiClient, mcName)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("MachineConfig %s not found: %v", mcName, err)
+		klog.Errorf("failed to pull MachineConfig %s: %v", mcName, err)
 
 		return nil
 	}
@@ -35,6 +35,8 @@ func DeleteBlacklistMachineConfig(apiClient *clients.Settings) error {
 
 	err = mcBuilder.Delete()
 	if err != nil {
+		klog.Errorf("failed to delete MachineConfig %s: %v", mcName, err)
+
 		return fmt.Errorf("failed to delete MachineConfig %s: %w", mcName, err)
 	}
 
@@ -49,6 +51,8 @@ func CleanupAMDGPUNodeLabels(apiClient *clients.Settings) error {
 
 	allNodes, err := nodes.List(apiClient, metav1.ListOptions{})
 	if err != nil {
+		klog.Errorf("failed to list nodes for label cleanup: %v", err)
+
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
 
@@ -77,8 +81,7 @@ func CleanupAMDGPUNodeLabels(apiClient *clients.Settings) error {
 		if labelsRemoved {
 			_, err := nodeBuilder.Update()
 			if err != nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof(
-					"Failed to remove labels from node %s: %v", nodeBuilder.Object.Name, err)
+				klog.Errorf("failed to remove labels from node %s: %v", nodeBuilder.Object.Name, err)
 			}
 		}
 	}
@@ -100,7 +103,7 @@ func DeleteOperatorNamespaces(apiClient *clients.Settings) error {
 	for _, nsName := range namespacesToDelete {
 		nsBuilder, err := namespace.Pull(apiClient, nsName)
 		if err != nil {
-			klog.V(amdgpuparams.AMDGPULogLevel).Infof("Namespace %s not found: %v", nsName, err)
+			klog.Errorf("failed to pull namespace %s: %v", nsName, err)
 
 			continue
 		}
@@ -111,12 +114,12 @@ func DeleteOperatorNamespaces(apiClient *clients.Settings) error {
 
 		err = nsBuilder.DeleteAndWait(5 * time.Minute)
 		if err != nil {
-			klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to delete namespace %s: %v", nsName, err)
+			klog.Errorf("failed to delete namespace %s: %v", nsName, err)
 
 			// Try force deletion
 			err = forceDeleteNamespace(apiClient, nsName)
 			if err != nil {
-				klog.V(amdgpuparams.AMDGPULogLevel).Infof("Force delete also failed for %s: %v", nsName, err)
+				klog.Errorf("force delete also failed for namespace %s: %v", nsName, err)
 			}
 		}
 	}
@@ -149,6 +152,8 @@ func forceDeleteNamespace(apiClient *clients.Settings, nsName string) error {
 
 	_, err = apiClient.CoreV1Interface.Namespaces().Finalize(ctx, namespaceObj, metav1.UpdateOptions{})
 	if err != nil {
+		klog.Errorf("failed to remove finalizers from namespace %s: %v", nsName, err)
+
 		return fmt.Errorf("failed to remove finalizers: %w", err)
 	}
 

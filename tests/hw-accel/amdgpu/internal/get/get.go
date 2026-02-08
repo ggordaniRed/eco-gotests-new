@@ -22,6 +22,9 @@ func PodsFromNamespaceByPrefixWithTimeout(
 	for {
 		select {
 		case <-ctx.Done():
+			klog.Errorf("timeout period has been exceeded while waiting for Pods with prefix '%s' in namespace '%s'",
+				prefix, nsname)
+
 			return nil, fmt.Errorf("timeout period has been exceeded while "+
 				"waiting for Pods with prefix '%s' in namespace '%s'", prefix, nsname)
 		case <-time.After(amdgpuparams.DefaultSleepInterval):

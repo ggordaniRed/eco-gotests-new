@@ -105,6 +105,50 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 
 			By("Waiting for NFD to label nodes")
 			time.Sleep(1 * time.Minute)
+			startTime := time.Now()
+			amdNodeBuilders, err = nodes.List(apiClient, amdListOptions)
+			retryInterval := 30 * time.Second
+			maxWait := 10 * time.Minute
+			for (err != nil || len(amdNodeBuilders) == 0) && time.Since(startTime) < maxWait {
+				klog.V(amdgpuparams.AMDGPULogLevel).Info("No AMD GPU NFD labels found yet, retrying...")
+				time.Sleep(retryInterval)
+				amdNodeBuilders, err = nodes.List(apiClient, amdListOptions)
+			}
+
+			if err != nil || len(amdNodeBuilders) == 0 {
+				klog.Errorf("NFD labels for AMD GPU nodes not found after waiting %v", maxWait)
+
+				// Log all pods in all test namespaces
+				testNamespaces := []string{amdgpuparams.AMDGPUNamespace, nfdparams.NFDNamespace, "openshift-kmm"}
+				for _, testNameSpace := range testNamespaces {
+					podList, podErr := pod.List(apiClient, testNameSpace)
+					if podErr != nil {
+						klog.Errorf("Failed to get pods in namespace %s: %v", testNameSpace, podErr)
+
+						continue
+					}
+					for _, p := range podList {
+						klog.Errorf("Pod in %s: %s Phase: %s, Status: %+v",
+							testNameSpace,
+							p.Object.Name,
+							p.Object.Status.Phase,
+							p.Object.Status)
+					}
+				}
+
+				// Log all node labels
+				nodeListAll, nodeListErr := nodes.List(apiClient, metav1.ListOptions{})
+				if nodeListErr != nil {
+					klog.Errorf("Failed to list nodes: %v", nodeListErr)
+				}
+				for _, n := range nodeListAll {
+					klog.Errorf("Node: %s - Labels: %+v", n.Object.Name, n.Object.Labels)
+				}
+
+				Expect(err).ToNot(HaveOccurred(), "Failed to get AMD GPU Worker Nodes after 10 minutes, or no NFD labels found")
+				Expect(amdNodeBuilders).ToNot(BeEmpty(),
+					"No AMD GPU Worker Nodes found after waiting 10 minutes for NFD labels to appear")
+			}
 
 			By("Creating DeviceConfig with Node Labeller enabled")
 			err = amdgpudeviceconfig.CreateDeviceConfig(

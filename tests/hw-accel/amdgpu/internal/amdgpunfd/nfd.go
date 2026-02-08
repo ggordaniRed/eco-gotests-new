@@ -16,6 +16,8 @@ func CreateAMDGPUFeatureRule(apiClient *clients.Settings) error {
 
 	featureRuleBuilder := nfd.NewNodeFeatureRuleBuilderFromObjectString(apiClient, getAMDGPUFeatureRuleYAML())
 	if featureRuleBuilder == nil {
+		klog.Errorf("failed to create NodeFeatureRule builder")
+
 		return fmt.Errorf("failed to create NodeFeatureRule builder")
 	}
 
@@ -95,13 +97,10 @@ func getAMDGPUFeatureRuleYAML() string {
 
 // handleFeatureRuleCreationError handles errors during FeatureRule creation.
 func handleFeatureRuleCreationError(err error) error {
-	klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error creating AMD GPU FeatureRule: %v", err)
+	klog.Errorf("Error creating AMD GPU FeatureRule: %v", err)
 
 	if amdgpucommon.IsCRDNotAvailable(err) {
-		featureRuleYAML := getAMDGPUFeatureRuleYAML()
-
-		klog.V(amdgpuparams.AMDGPULogLevel).Info("NFD FeatureRule CRD not available - manual creation required")
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("AMD GPU FeatureRule YAML:\n%s", featureRuleYAML)
+		klog.Errorf("NFD FeatureRule CRD not available - manual creation required")
 
 		return fmt.Errorf("NFD FeatureRule CRD not available, manual creation required")
 	}

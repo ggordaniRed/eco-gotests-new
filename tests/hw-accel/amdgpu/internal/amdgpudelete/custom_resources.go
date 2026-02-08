@@ -51,7 +51,7 @@ func (a *AMDGPUCustomResourceCleaner) CleanupCustomResources() error {
 
 	err = a.waitForDeviceConfigCleanup()
 	if err != nil {
-		klog.V(a.LogLevel).Infof("Timeout waiting for AMD GPU DeviceConfigs removal: %v", err)
+		klog.Errorf("timeout waiting for AMD GPU DeviceConfigs removal: %v", err)
 	}
 
 	klog.V(a.LogLevel).Infof("Successfully cleaned up %d AMD GPU custom resources", deletedCount)
@@ -111,7 +111,7 @@ func (a *AMDGPUCustomResourceCleaner) deleteDeviceConfig(
 
 	err := a.APIClient.Client.Delete(ctx, deviceConfig)
 	if err != nil {
-		klog.V(a.LogLevel).Infof("Error deleting AMD GPU DeviceConfig %s: %v", deviceConfigName, err)
+		klog.Errorf("failed to delete AMD GPU DeviceConfig %s: %v", deviceConfigName, err)
 
 		return false
 	}
@@ -129,7 +129,7 @@ func (a *AMDGPUCustomResourceCleaner) removeFinalizers(
 
 	err := a.APIClient.Client.Update(ctx, deviceConfig)
 	if err != nil {
-		klog.V(a.LogLevel).Infof("Warning: failed to remove finalizers from DeviceConfig %s: %v", deviceConfigName, err)
+		klog.Errorf("failed to remove finalizers from DeviceConfig %s: %v", deviceConfigName, err)
 	}
 }
 

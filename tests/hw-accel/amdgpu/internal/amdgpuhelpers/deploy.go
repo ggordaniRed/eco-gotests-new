@@ -57,11 +57,15 @@ func DeployAllOperators(apiClient *clients.Settings) error {
 
 		err := installer.Install()
 		if err != nil {
+			klog.Errorf("failed to install %s operator: %v", operator, err)
+
 			return fmt.Errorf("failed to install %s operator: %w", operator, err)
 		}
 
 		_, err = installer.IsReady(timeout)
 		if err != nil {
+			klog.Errorf("%s operator readiness check failed: %v", operator, err)
+
 			return fmt.Errorf("%s operator readiness check failed: %w", operator, err)
 		}
 	}

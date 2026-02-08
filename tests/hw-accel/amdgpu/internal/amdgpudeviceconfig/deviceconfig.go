@@ -95,8 +95,12 @@ func CreateDeviceConfig(apiClient *clients.Settings, deviceConfigName, driverVer
 		})
 	if err != nil {
 		if lastErr != nil {
+			klog.Errorf("failed to create DeviceConfig builder after retries: %v (last error: %v)", err, lastErr)
+
 			return fmt.Errorf("failed to create DeviceConfig builder after retries: %w (last error: %w)", err, lastErr)
 		}
+
+		klog.Errorf("failed to create DeviceConfig builder: %v", err)
 
 		return fmt.Errorf("failed to create DeviceConfig builder: %w", err)
 	}
@@ -155,6 +159,8 @@ func createDeviceConfigBuilder(
 
 	err := apiClient.AttachScheme(amdgpuv1.AddToScheme)
 	if err != nil {
+		klog.Errorf("failed to attach amdgpu scheme: %v", err)
+
 		return nil, fmt.Errorf("failed to attach amdgpu scheme: %w", err)
 	}
 
@@ -193,6 +199,8 @@ func createDeviceConfigBuilder(
 
 	builder = amdgpu.NewBuilderFromObjectString(apiClient, almExampleJSON)
 	if builder == nil {
+		klog.Errorf("failed to create DeviceConfig builder from JSON")
+
 		return nil, fmt.Errorf("failed to create DeviceConfig builder from JSON")
 	}
 
@@ -203,11 +211,10 @@ func createDeviceConfigBuilder(
 
 // handleDeviceConfigCreationError handles errors during DeviceConfig creation.
 func handleDeviceConfigCreationError(err error, deviceConfigName string) error {
-	klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error creating DeviceConfig %s: %v", deviceConfigName, err)
+	klog.Errorf("Error creating DeviceConfig %s: %v", deviceConfigName, err)
 
 	if amdgpucommon.IsCRDNotAvailable(err) {
-		klog.V(amdgpuparams.AMDGPULogLevel).Info("DeviceConfig CRD not available - manual creation required")
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("DeviceConfig creation failed - CRD may not be installed")
+		klog.Errorf("DeviceConfig CRD not available - manual creation required")
 
 		return fmt.Errorf("DeviceConfig CRD not available, manual creation required")
 	}
@@ -221,6 +228,8 @@ func DeleteDeviceConfig(apiClient *clients.Settings, deviceConfigName string) er
 
 	err := apiClient.AttachScheme(amdgpuv1.AddToScheme)
 	if err != nil {
+		klog.Errorf("failed to attach amdgpu scheme for deletion: %v", err)
+
 		return fmt.Errorf("failed to attach amdgpu scheme: %w", err)
 	}
 
@@ -240,6 +249,8 @@ func DeleteDeviceConfig(apiClient *clients.Settings, deviceConfigName string) er
 
 	_, err = deviceConfigBuilder.Delete()
 	if err != nil {
+		klog.Errorf("failed to delete DeviceConfig %s: %v", deviceConfigName, err)
+
 		return fmt.Errorf("failed to delete DeviceConfig %s: %w", deviceConfigName, err)
 	}
 

@@ -39,7 +39,7 @@ func WaitForNodeLabel(apiClient *clients.Settings, labelKey, labelValue string, 
 				LabelSelector: labelKey + "=" + labelValue,
 			})
 			if err != nil {
-				klog.V(90).Infof("Error listing nodes: %v", err)
+				klog.Errorf("error listing nodes with label %s=%s: %v", labelKey, labelValue, err)
 				time.Sleep(10 * time.Second)
 
 				continue
@@ -63,7 +63,7 @@ func VerifyAMDGPUKernelModule(apiClient *clients.Settings) error {
 
 	nodes, err := getAMDGPUNodes(apiClient)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to get AMD GPU nodes (this may be expected): %v", err)
+		klog.Errorf("failed to get AMD GPU nodes: %v", err)
 
 		return nil
 	}
@@ -103,6 +103,8 @@ func verifyKernelModuleOnNodes(apiClient *clients.Settings, nodes []corev1.Node)
 	}
 
 	if !success {
+		klog.Errorf("failed to verify amdgpu module status on some nodes")
+
 		return fmt.Errorf("failed to verify amdgpu module status on some nodes")
 	}
 
@@ -126,7 +128,7 @@ func checkModuleBlacklist(apiClient *clients.Settings, nodeName string) bool {
 
 	output, err := execCommandOnNode(apiClient, nodeName, blacklistCheck, executionTimeout)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error checking blacklist on node %s: %v", nodeName, err)
+		klog.Errorf("error checking blacklist on node %s: %v", nodeName, err)
 
 		return false
 	}
@@ -134,7 +136,7 @@ func checkModuleBlacklist(apiClient *clients.Settings, nodeName string) bool {
 	klog.V(amdgpuparams.AMDGPULogLevel).Infof("Node %s amdgpu module blacklist status: %s", nodeName, output)
 
 	if !strings.Contains(output, "BLACKLISTED") {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("FAIL: amdgpu is not blacklisted on node %s", nodeName)
+		klog.Errorf("FAIL: amdgpu is not blacklisted on node %s", nodeName)
 
 		return false
 	}
@@ -148,7 +150,7 @@ func checkModuleLoadStatus(apiClient *clients.Settings, nodeName string) bool {
 
 	output, err := execCommandOnNode(apiClient, nodeName, loadedCheck, executionTimeout)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Error checking module load status on node %s: %v", nodeName, err)
+		klog.Errorf("error checking module load status on node %s: %v", nodeName, err)
 
 		return false
 	}
@@ -202,7 +204,7 @@ func execCommandOnNode(
 
 	output, err := podCommand.ExecuteAndCleanup(executionTime)
 	if err != nil {
-		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Command execution failed on node %s: %v", nodeName, err)
+		klog.Errorf("command execution failed on node %s: %v", nodeName, err)
 
 		return output, err
 	}

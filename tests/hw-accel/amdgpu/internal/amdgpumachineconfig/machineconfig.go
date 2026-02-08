@@ -30,6 +30,8 @@ func CreateAMDGPUBlacklist(apiClient *clients.Settings, roleName string) error {
 
 	actualRole, err := determineNodeRole(apiClient, roleName)
 	if err != nil {
+		klog.Errorf("failed to determine node role: %v", err)
+
 		return fmt.Errorf("failed to determine node role: %w", err)
 	}
 
@@ -60,6 +62,8 @@ func CreateAMDGPUBlacklist(apiClient *clients.Settings, roleName string) error {
 
 	// Create MachineConfig in cluster
 	if _, err := mcBuilder.Create(); err != nil {
+		klog.Errorf("failed to create MachineConfig: %v", err)
+
 		return fmt.Errorf("failed to create MachineConfig: %w", err)
 	}
 
@@ -70,6 +74,8 @@ func CreateAMDGPUBlacklist(apiClient *clients.Settings, roleName string) error {
 func DetermineMachineConfigPoolName(apiClient *clients.Settings) (string, error) {
 	isSNO, err := amdgpucommon.IsSingleNodeOpenShift(apiClient)
 	if err != nil {
+		klog.Errorf("failed to determine cluster type: %v", err)
+
 		return "", fmt.Errorf("failed to determine cluster type: %w", err)
 	}
 
@@ -89,6 +95,8 @@ func WaitForMachineConfigPoolStable(apiClient *clients.Settings, mcpName string,
 
 	isSNO, err := amdgpucommon.IsSingleNodeOpenShift(apiClient)
 	if err != nil {
+		klog.Errorf("failed to determine cluster type for MCP stability wait: %v", err)
+
 		return fmt.Errorf("failed to determine cluster type: %w", err)
 	}
 
@@ -105,6 +113,8 @@ func WaitForMachineConfigPoolStable(apiClient *clients.Settings, mcpName string,
 func determineNodeRole(apiClient *clients.Settings, requestedRole string) (string, error) {
 	isSNO, err := amdgpucommon.IsSingleNodeOpenShift(apiClient)
 	if err != nil {
+		klog.Errorf("failed to determine cluster type for node role: %v", err)
+
 		return "", fmt.Errorf("failed to determine cluster type: %w", err)
 	}
 
@@ -126,11 +136,15 @@ func waitForMCPStableMultiNode(apiClient *clients.Settings, mcpName string, time
 
 	err := waitForMCPUpdating(apiClient, mcpName, ctx)
 	if err != nil {
+		klog.Errorf("MachineConfigPool %s did not start updating: %v", mcpName, err)
+
 		return fmt.Errorf("MachineConfigPool %s did not start updating: %w", mcpName, err)
 	}
 
 	err = waitForMCPStable(apiClient, mcpName, ctx)
 	if err != nil {
+		klog.Errorf("MachineConfigPool %s did not become stable: %v", mcpName, err)
+
 		return fmt.Errorf("MachineConfigPool %s did not become stable: %w", mcpName, err)
 	}
 

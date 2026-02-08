@@ -50,6 +50,8 @@ func NodeLabellerPodsFromNodes(apiClient *clients.Settings, nodes []*nodes.Build
 	}
 
 	if len(allErrors) > 0 {
+		klog.Errorf("encountered errors on %d node(s): %s", len(allErrors), strings.Join(allErrors, "; "))
+
 		return nil, fmt.Errorf("encountered errors on %d node(s): %s", len(allErrors), strings.Join(allErrors, "; "))
 	}
 
@@ -71,6 +73,9 @@ func PodsFromNodeByPrefixWithTimeout(ctx context.Context, waitGroup *sync.WaitGr
 	for {
 		select {
 		case <-funcCtx.Done():
+			klog.Errorf("timeout period has been exceeded while waiting for pods with prefix '%s' on node %s",
+				prefix, node.Object.Name)
+
 			errCh <- fmt.Errorf("timeout period has been exceeded while waiting "+
 				"for pods with prefix '%s'on node %s", prefix, node.Object.Name)
 
@@ -85,6 +90,7 @@ func PodsFromNodeByPrefixWithTimeout(ctx context.Context, waitGroup *sync.WaitGr
 				metav1.ListOptions{FieldSelector: podListFieldSelector})
 			if podsListErr != nil {
 				klog.Errorf("failed to list Pods on node '%s': %v", node.Object.Name, podsListErr)
+
 				errCh <- fmt.Errorf("failed to list Pods on node '%s'.\n%w", node.Object.Name, podsListErr)
 
 				return
@@ -97,6 +103,9 @@ func PodsFromNodeByPrefixWithTimeout(ctx context.Context, waitGroup *sync.WaitGr
 			}
 
 			if len(podsWithPrefix) > cnt {
+				klog.Errorf("got too many Pods ('%d') with prefix of '%s' on node '%s'. Maximum Pods allowed: '%d'",
+					len(podsWithPrefix), prefix, node.Object.Name, cnt)
+
 				errCh <- fmt.Errorf("got too many Pods ('%d') with prefix of '%s' on node '%s'. "+
 					"Maximum Pods allowed: '%d'", len(podsWithPrefix), prefix, node.Object.Name, cnt)
 
@@ -135,6 +144,8 @@ func WaitUntilNoMorePodsInNamespaceByNameWithTimeout(ctx context.Context, apiCli
 	for {
 		select {
 		case <-newCtx.Done():
+			klog.Errorf("timeout period has been exceeded while waiting until no more Pods with prefix '%s'", prefix)
+
 			return fmt.Errorf("timeout period has been exceeded while waiting until no more Pods with prefix '%s'", prefix)
 		case <-time.After(chkInterval):
 			podsWithPrefix = nil
