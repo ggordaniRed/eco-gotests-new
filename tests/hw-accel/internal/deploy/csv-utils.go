@@ -116,6 +116,8 @@ func (c *CSVUtils) IsCSVReady(csv *olm.ClusterServiceVersionBuilder) (bool, erro
 }
 
 // WaitForCSVReady waits for a CSV to become ready within the specified timeout.
+// On connection errors it retries. On a Failed CSV it deletes it so OLM can
+// recreate it from the Subscription (handles SNO reboots mid-install).
 func (c *CSVUtils) WaitForCSVReady(packageName string, timeout time.Duration) (bool, error) {
 	klog.V(c.LogLevel).Infof("Waiting for CSV readiness for package '%s' in namespace '%s' (timeout: %v)",
 		packageName, c.Namespace, timeout)
@@ -128,20 +130,36 @@ func (c *CSVUtils) WaitForCSVReady(packageName string, timeout time.Duration) (b
 	for {
 		select {
 		case <-ticker.C:
+			if time.Since(start) >= timeout {
+				return false, fmt.Errorf("timeout waiting for CSV readiness for package %s after %v",
+					packageName, timeout)
+			}
+
 			csv, err := c.GetCSVByPackageName(packageName)
 			if err != nil {
-				klog.V(c.LogLevel).Infof("CSV not found yet for package %s: %v", packageName, err)
+				if isCSVConnectionError(err) {
+					klog.V(c.LogLevel).Infof("API unreachable waiting for CSV %s, retrying: %v",
+						packageName, err)
 
-				if time.Since(start) < timeout {
 					continue
 				}
 
-				return false, fmt.Errorf("timeout waiting for CSV for package %s: %w", packageName, err)
+				klog.V(c.LogLevel).Infof("CSV not found yet for package %s: %v", packageName, err)
+
+				continue
 			}
 
 			ready, err := c.IsCSVReady(csv)
 			if err != nil {
-				return false, fmt.Errorf("CSV readiness check failed: %w", err)
+				// CSV is in Failed state — delete it so OLM recreates from the Subscription.
+				klog.V(c.LogLevel).Infof("CSV %s is Failed, deleting for OLM to recreate: %v",
+					csv.Object.Name, err)
+
+				if deleteErr := csv.Delete(); deleteErr != nil {
+					klog.V(c.LogLevel).Infof("Failed to delete CSV %s: %v", csv.Object.Name, deleteErr)
+				}
+
+				continue
 			}
 
 			if ready {
@@ -150,14 +168,31 @@ func (c *CSVUtils) WaitForCSVReady(packageName string, timeout time.Duration) (b
 				return true, nil
 			}
 
-			if time.Since(start) >= timeout {
-				return false, fmt.Errorf("timeout waiting for CSV readiness for package %s after %v", packageName, timeout)
-			}
-
 		case <-time.After(timeout):
 			return false, fmt.Errorf("timeout waiting for CSV readiness for package %s", packageName)
 		}
 	}
+}
+
+// isCSVConnectionError returns true for transient network errors that should be retried.
+func isCSVConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	for _, pattern := range []string{
+		"connection refused", "connection reset", "no such host",
+		"i/o timeout", "eof", "context deadline exceeded", "dial tcp",
+		"tls handshake", "network is unreachable",
+	} {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ListCSVsInNamespace returns all CSVs in the namespace.

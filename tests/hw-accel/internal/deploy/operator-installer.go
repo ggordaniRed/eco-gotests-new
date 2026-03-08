@@ -135,6 +135,34 @@ func (o *OperatorInstaller) GetCSVUtils() *CSVUtils {
 	return o.csvUtils
 }
 
+// ReconcileAndWait checks operator health and waits for readiness, recovering from
+// post-reboot states where the Subscription exists but the CSV is stuck or missing.
+// Unlike IsReady, it does not fail immediately on a missing or failed CSV —
+// it relies on WaitForCSVReady to self-heal (delete failed CSVs, retry on connection errors).
+func (o *OperatorInstaller) ReconcileAndWait(timeout time.Duration) error {
+	klog.V(o.config.LogLevel).Infof("Reconciling operator %s in namespace %s",
+		o.config.PackageName, o.config.Namespace)
+
+	// If the subscription is gone (e.g. namespace was wiped), recreate it.
+	if err := o.createSubscription(); err != nil {
+		klog.V(o.config.LogLevel).Infof("Subscription recreate attempt for %s: %v",
+			o.config.PackageName, err)
+	}
+
+	ready, err := o.csvUtils.WaitForCSVReady(o.config.PackageName, timeout)
+	if err != nil {
+		return fmt.Errorf("operator %s not ready after reconcile: %w", o.config.PackageName, err)
+	}
+
+	if !ready {
+		return fmt.Errorf("operator %s not ready after %v", o.config.PackageName, timeout)
+	}
+
+	klog.V(o.config.LogLevel).Infof("Operator %s is healthy", o.config.PackageName)
+
+	return nil
+}
+
 // GetCSVStatus returns the current CSV status for debugging purposes.
 func (o *OperatorInstaller) GetCSVStatus() (string, error) {
 	csv, err := o.csvUtils.GetCSVByPackageName(o.config.PackageName)
