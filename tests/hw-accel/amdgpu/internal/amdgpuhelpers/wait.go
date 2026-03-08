@@ -568,7 +568,7 @@ func evaluateNodeLabellerPods(podList *corev1.PodList) (bool, error) {
 // checkPodDriverInit checks the driver-init container status for a pod.
 func checkPodDriverInit(podItem *corev1.Pod) (bool, error) {
 	for _, initStatus := range podItem.Status.InitContainerStatuses {
-		if strings.Contains(strings.ToLower(initStatus.Name), "driver-init") {
+		if !strings.Contains(strings.ToLower(initStatus.Name), "driver-init") {
 			continue
 		}
 
