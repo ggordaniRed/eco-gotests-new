@@ -118,6 +118,9 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 			if err != nil || len(amdNodeBuilders) == 0 {
 				klog.Errorf("NFD labels for AMD GPU nodes not found after waiting %v", maxWait)
 
+				// Detailed NFD diagnostics: FeatureRule spec, NFD pod statuses, node labels.
+				amdgpunfd.LogNFDDiagnostics(apiClient)
+
 				// Log all pods in all test namespaces
 				testNamespaces := []string{amdgpuparams.AMDGPUNamespace, nfdparams.NFDNamespace, "openshift-kmm"}
 				for _, testNameSpace := range testNamespaces {
