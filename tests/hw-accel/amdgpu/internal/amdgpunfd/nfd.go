@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/events"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/nfd"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/nodes"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/pod"
 	"github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/internal/amdgpucommon"
 	amdgpuparams "github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/params"
 	"github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/nfd/nfdparams"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 )
@@ -133,7 +135,7 @@ func handleFeatureRuleCreationError(err error) error {
 }
 
 // LogNFDDiagnostics logs detailed NFD state to help debug why labels are not applied.
-// It covers: NodeFeatureRule existence and spec, NFD pod statuses, and node NFD labels.
+// It covers: NodeFeatureRule spec, NFD pod conditions/logs/events, and node NFD labels.
 func LogNFDDiagnostics(apiClient *clients.Settings) {
 	klog.Errorf("=== NFD DIAGNOSTICS START ===")
 
@@ -148,23 +150,56 @@ func LogNFDDiagnostics(apiClient *clients.Settings) {
 		}
 	}
 
-	// 2. Log NFD worker and controller pod statuses and their container states.
+	// 2. Describe NFD pods: phase, conditions, container states, and last 50 log lines.
 	nfdPods, err := pod.List(apiClient, nfdparams.NFDNamespace)
 	if err != nil {
 		klog.Errorf("Failed to list NFD pods in %s: %v", nfdparams.NFDNamespace, err)
 	} else {
-		klog.Errorf("NFD pods in %s:", nfdparams.NFDNamespace)
+		klog.Errorf("NFD pods in %s (%d found):", nfdparams.NFDNamespace, len(nfdPods))
+
 		for _, p := range nfdPods {
-			klog.Errorf("  Pod: %s  Phase: %s  Ready: %v",
+			klog.Errorf("  --- Pod: %s  Phase: %s  Ready: %v ---",
 				p.Object.Name, p.Object.Status.Phase, isPodReady(p))
+
+			// Pod conditions (surface Unschedulable, PodHasNetwork, etc.)
+			for _, cond := range p.Object.Status.Conditions {
+				klog.Errorf("    Condition: type=%s status=%s reason=%s message=%s",
+					cond.Type, cond.Status, cond.Reason, cond.Message)
+			}
+
+			// Container statuses + last 50 log lines per container.
 			for _, cs := range p.Object.Status.ContainerStatuses {
 				klog.Errorf("    Container: %s  Ready: %v  RestartCount: %d  State: %+v",
+					cs.Name, cs.Ready, cs.RestartCount, cs.State)
+				logNFDContainerLogs(p, cs.Name)
+			}
+
+			// Init container statuses.
+			for _, cs := range p.Object.Status.InitContainerStatuses {
+				klog.Errorf("    InitContainer: %s  Ready: %v  RestartCount: %d  State: %+v",
 					cs.Name, cs.Ready, cs.RestartCount, cs.State)
 			}
 		}
 	}
 
-	// 3. Log all node labels — both NFD feature labels and AMD GPU labels.
+	// 3. Log Warning events in the NFD namespace (catches SCC denials, image pull errors, etc.)
+	nfdEvents, evErr := events.List(apiClient, nfdparams.NFDNamespace)
+	if evErr != nil {
+		klog.Errorf("Failed to list events in %s: %v", nfdparams.NFDNamespace, evErr)
+	} else {
+		klog.Errorf("Events in %s:", nfdparams.NFDNamespace)
+
+		for _, ev := range nfdEvents {
+			if ev.Object.Type == "Warning" {
+				klog.Errorf("  WARNING event: reason=%s obj=%s/%s count=%d message=%s",
+					ev.Object.Reason,
+					ev.Object.InvolvedObject.Kind, ev.Object.InvolvedObject.Name,
+					ev.Object.Count, ev.Object.Message)
+			}
+		}
+	}
+
+	// 4. Log all node labels — both NFD feature labels and AMD GPU labels.
 	allNodes, err := nodes.List(apiClient, metav1.ListOptions{})
 	if err != nil {
 		klog.Errorf("Failed to list nodes: %v", err)
@@ -187,6 +222,28 @@ func LogNFDDiagnostics(apiClient *clients.Settings) {
 	}
 
 	klog.Errorf("=== NFD DIAGNOSTICS END ===")
+}
+
+// logNFDContainerLogs fetches the last 50 lines of logs from a container and logs them.
+func logNFDContainerLogs(p *pod.Builder, containerName string) {
+	const tailLines = int64(50)
+
+	logBytes, err := p.GetLogsWithOptions(&corev1.PodLogOptions{
+		Container: containerName,
+		TailLines: &[]int64{tailLines}[0],
+	})
+	if err != nil {
+		klog.Errorf("      [logs] failed to get logs for container %s: %v", containerName, err)
+
+		return
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	klog.Errorf("      [logs] last %d lines for container %s:", len(lines), containerName)
+
+	for _, line := range lines {
+		klog.Errorf("        %s", line)
+	}
 }
 
 // isPodReady returns true if all containers in the pod are ready.
