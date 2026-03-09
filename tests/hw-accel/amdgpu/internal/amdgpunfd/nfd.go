@@ -71,7 +71,7 @@ func getAMDGPUFeatureRuleYAML() string {
         "kind": "NodeFeatureRule",
         "metadata": {
             "name": "amd-gpu-feature-rule",
-            "namespace": "openshift-amd-gpu"
+            "namespace": "openshift-nfd"
         },
         "spec": {
             "rules": [
