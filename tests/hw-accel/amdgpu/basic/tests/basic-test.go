@@ -88,6 +88,10 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 			err = amdgpuhelpers.DeployAllOperators(apiClient)
 			Expect(err).ToNot(HaveOccurred(), "Failed to deploy required operators")
 
+			By("Granting privileged SCC to nfd-worker (workaround for NFD operator SCC reconcile bug)")
+			err = amdgpunfd.GrantNFDWorkerPrivilegedSCC(apiClient)
+			Expect(err).ToNot(HaveOccurred(), "nfd-worker privileged SCC grant should succeed")
+
 			By("Deploying NFD custom resource with AMD GPU worker config")
 			nfdCRUtils := deploy.NewNFDCRUtils(apiClient, nfdparams.NFDNamespace, "amd-gpu-nfd-instance")
 			nfdConfig := deploy.NFDCRConfig{
@@ -99,9 +103,9 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 			err = nfdCRUtils.DeployNFDCR(nfdConfig)
 			Expect(err).ToNot(HaveOccurred(), "NFD CR should be created successfully: %v", err)
 
-			By("Granting privileged SCC to nfd-worker (workaround for NFD operator SCC reconcile bug)")
-			err = amdgpunfd.GrantNFDWorkerPrivilegedSCC(apiClient)
-			Expect(err).ToNot(HaveOccurred(), "nfd-worker privileged SCC grant should succeed")
+			By("Recovering any nfd-worker pods stuck in CreateContainerConfigError")
+			err = amdgpunfd.RecoverNFDWorkerPodsIfStuck(apiClient)
+			Expect(err).ToNot(HaveOccurred(), "nfd-worker pod recovery should succeed")
 
 			By("Creating AMD GPU FeatureRule for enhanced detection")
 			err = amdgpunfd.CreateAMDGPUFeatureRule(apiClient)

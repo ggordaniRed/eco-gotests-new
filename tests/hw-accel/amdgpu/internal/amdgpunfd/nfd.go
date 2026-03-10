@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/events"
@@ -308,6 +309,75 @@ func GrantNFDWorkerPrivilegedSCC(apiClient *clients.Settings) error {
 		"Successfully granted privileged SCC to nfd-worker in %s", nfdparams.NFDNamespace)
 
 	return nil
+}
+
+// RecoverNFDWorkerPodsIfStuck waits briefly for nfd-worker pods to appear, then deletes any
+// that are stuck in CreateContainerConfigError so they restart with the SCC binding in place.
+// It also re-grants the SCC before deleting, in case the NFD operator deleted our CRB during reconcile.
+func RecoverNFDWorkerPodsIfStuck(apiClient *clients.Settings) error {
+	const waitForPods = 30 * time.Second
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof(
+		"Waiting %s for nfd-worker pods to appear before checking for stuck state", waitForPods)
+	time.Sleep(waitForPods)
+
+	nfdWorkerPods, err := pod.List(apiClient, nfdparams.NFDNamespace,
+		metav1.ListOptions{LabelSelector: "app=nfd-worker"})
+	if err != nil {
+		return fmt.Errorf("failed to list nfd-worker pods: %w", err)
+	}
+
+	stuck := 0
+
+	for _, p := range nfdWorkerPods {
+		if isStuckInCreateContainerConfigError(p) {
+			stuck++
+		}
+	}
+
+	if stuck == 0 {
+		klog.V(amdgpuparams.AMDGPULogLevel).Infof("No nfd-worker pods stuck in CreateContainerConfigError")
+
+		return nil
+	}
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof(
+		"%d nfd-worker pod(s) stuck in CreateContainerConfigError — re-granting SCC and deleting stuck pods", stuck)
+
+	// Re-grant in case the NFD operator reconciler deleted our CRB in the meantime.
+	if err := GrantNFDWorkerPrivilegedSCC(apiClient); err != nil {
+		return fmt.Errorf("failed to re-grant privileged SCC before pod recovery: %w", err)
+	}
+
+	for _, p := range nfdWorkerPods {
+		if !isStuckInCreateContainerConfigError(p) {
+			continue
+		}
+
+		klog.V(amdgpuparams.AMDGPULogLevel).Infof("Deleting stuck nfd-worker pod %s", p.Object.Name)
+
+		_, err := p.Delete()
+		if err != nil {
+			klog.V(amdgpuparams.AMDGPULogLevel).Infof("Failed to delete pod %s: %v", p.Object.Name, err)
+		}
+	}
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof(
+		"Deleted %d stuck nfd-worker pod(s); they will restart with the privileged SCC binding", stuck)
+
+	return nil
+}
+
+// isStuckInCreateContainerConfigError returns true if any container in the pod is waiting
+// with reason CreateContainerConfigError (typically caused by missing SCC permissions).
+func isStuckInCreateContainerConfigError(p *pod.Builder) bool {
+	for _, cs := range p.Object.Status.ContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CreateContainerConfigError" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // RevokeNFDWorkerPrivilegedSCC removes the privileged SCC ClusterRoleBinding for nfd-worker.
