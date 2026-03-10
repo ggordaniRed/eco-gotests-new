@@ -10,10 +10,12 @@ import (
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/nfd"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/nodes"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/pod"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/rbac"
 	"github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/internal/amdgpucommon"
 	amdgpuparams "github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/amdgpu/params"
 	"github.com/rh-ecosystem-edge/eco-gotests/tests/hw-accel/nfd/nfdparams"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 )
@@ -264,6 +266,73 @@ func DeleteAMDGPUFeatureRule(apiClient *clients.Settings) error {
 	// FeatureRule will be cleaned up when NFD operator is uninstalled
 	// This is a placeholder for explicit cleanup if needed
 	klog.V(amdgpuparams.AMDGPULogLevel).Info("FeatureRule will be cleaned up with NFD operator uninstall")
+
+	return nil
+}
+
+// GrantNFDWorkerPrivilegedSCC grants the privileged SCC to the nfd-worker ServiceAccount.
+// This is needed because the NFD operator (nfd.4.18.0-202602132343) has a bug where its
+// controller-manager fails to reconcile the SCC for nfd-worker, preventing the DaemonSet
+// from starting. We work around it by creating the ClusterRoleBinding manually.
+func GrantNFDWorkerPrivilegedSCC(apiClient *clients.Settings) error {
+	const crbName = "nfd-worker-privileged-scc"
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof(
+		"Granting privileged SCC to nfd-worker ServiceAccount in %s", nfdparams.NFDNamespace)
+
+	subject := rbacv1.Subject{
+		Kind:      "ServiceAccount",
+		Name:      "nfd-worker",
+		Namespace: nfdparams.NFDNamespace,
+	}
+
+	crbBuilder := rbac.NewClusterRoleBindingBuilder(
+		apiClient,
+		crbName,
+		"system:openshift:scc:privileged",
+		subject,
+	)
+
+	if crbBuilder.Exists() {
+		klog.V(amdgpuparams.AMDGPULogLevel).Infof("ClusterRoleBinding %s already exists", crbName)
+
+		return nil
+	}
+
+	_, err := crbBuilder.Create()
+	if err != nil {
+		return fmt.Errorf("failed to create ClusterRoleBinding %s: %w", crbName, err)
+	}
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof(
+		"Successfully granted privileged SCC to nfd-worker in %s", nfdparams.NFDNamespace)
+
+	return nil
+}
+
+// RevokeNFDWorkerPrivilegedSCC removes the privileged SCC ClusterRoleBinding for nfd-worker.
+func RevokeNFDWorkerPrivilegedSCC(apiClient *clients.Settings) error {
+	const crbName = "nfd-worker-privileged-scc"
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof("Revoking privileged SCC ClusterRoleBinding %s", crbName)
+
+	crbBuilder, err := rbac.PullClusterRoleBinding(apiClient, crbName)
+	if err != nil {
+		if strings.Contains(err.Error(), "does not exist") {
+			klog.V(amdgpuparams.AMDGPULogLevel).Infof("ClusterRoleBinding %s not found, nothing to revoke", crbName)
+
+			return nil
+		}
+
+		return fmt.Errorf("failed to pull ClusterRoleBinding %s: %w", crbName, err)
+	}
+
+	err = crbBuilder.Delete()
+	if err != nil {
+		return fmt.Errorf("failed to delete ClusterRoleBinding %s: %w", crbName, err)
+	}
+
+	klog.V(amdgpuparams.AMDGPULogLevel).Infof("Successfully revoked privileged SCC ClusterRoleBinding %s", crbName)
 
 	return nil
 }

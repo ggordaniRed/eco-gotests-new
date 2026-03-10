@@ -99,6 +99,10 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 			err = nfdCRUtils.DeployNFDCR(nfdConfig)
 			Expect(err).ToNot(HaveOccurred(), "NFD CR should be created successfully: %v", err)
 
+			By("Granting privileged SCC to nfd-worker (workaround for NFD operator SCC reconcile bug)")
+			err = amdgpunfd.GrantNFDWorkerPrivilegedSCC(apiClient)
+			Expect(err).ToNot(HaveOccurred(), "nfd-worker privileged SCC grant should succeed")
+
 			By("Creating AMD GPU FeatureRule for enhanced detection")
 			err = amdgpunfd.CreateAMDGPUFeatureRule(apiClient)
 			Expect(err).ToNot(HaveOccurred(), "AMD GPU FeatureRule should be created successfully")
@@ -284,6 +288,13 @@ var _ = Describe("AMD GPU Basic Tests", Ordered, Label(amdgpuparams.LabelSuite),
 			err = amdgpunfd.DeleteAMDGPUFeatureRule(apiClient)
 			if err != nil {
 				klog.V(amdgpuparams.AMDGPULogLevel).Infof("FeatureRule deletion issue: %v", err)
+			}
+
+			// 2b. Revoke nfd-worker privileged SCC binding
+			By("Revoking nfd-worker privileged SCC ClusterRoleBinding")
+			err = amdgpunfd.RevokeNFDWorkerPrivilegedSCC(apiClient)
+			if err != nil {
+				klog.V(amdgpuparams.AMDGPULogLevel).Infof("nfd-worker SCC revoke issue: %v", err)
 			}
 
 			// 3. Uninstall operators in reverse order
