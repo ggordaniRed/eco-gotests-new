@@ -32,7 +32,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -86,16 +85,27 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 	)
 
 	BeforeAll(func() {
+		By("Checking if cluster is SNO")
+
+		isSNO, err := netenv.IsSNOCluster(APIClient)
+		Expect(err).ToNot(HaveOccurred(), "Failed to check if cluster is SNO")
+
+		if isSNO {
+			Skip("Skipping test on SNO (Single Node OpenShift) cluster - requires 2+ workers")
+		}
 
 		By("Verifying SR-IOV operator is running")
-		err := sriovoperator.IsSriovDeployed(APIClient, NetConfig.SriovOperatorNamespace)
+
+		err = sriovoperator.IsSriovDeployed(APIClient, NetConfig.SriovOperatorNamespace)
 		Expect(err).ToNot(HaveOccurred(), "Cluster doesn't support sriov test cases")
 
 		By("Verifying PF Status Relay operator is running")
+
 		err = verifyPFStatusRelayOperatorRunning()
 		Expect(err).ToNot(HaveOccurred(), "PF Status Relay operator is not running")
 
 		By("Discover worker nodes")
+
 		workerNodeList, err = nodes.List(APIClient,
 			metav1.ListOptions{LabelSelector: labels.Set(NetConfig.WorkerLabelMap).String()})
 		Expect(err).ToNot(HaveOccurred(), "Fail to discover worker nodes")
@@ -117,10 +127,12 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 		secondaryInterface1 = srIovInterfacesUnderTest[1]
 
 		By("Configure lab switch interface to support LACP")
+
 		switchCredentials, err = sriovenv.NewSwitchCredentials()
 		Expect(err).ToNot(HaveOccurred(), "Failed to get switch credentials")
 
 		By("Collecting switch interfaces")
+
 		switchInterfaces, err = NetConfig.GetSwitchInterfaces()
 		Expect(err).ToNot(HaveOccurred(), "Failed to get switch interfaces")
 		Expect(len(switchInterfaces)).To(BeNumerically(">=", 2),
@@ -129,26 +141,31 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 		firstTwoSwitchInterfaces = switchInterfaces[:2]
 
 		By("Saving switch interface configurations for restoration")
+
 		originalInterfaceConfigs = saveSwitchInterfaceConfigs(switchCredentials, firstTwoSwitchInterfaces)
 
 		By("Deleting physical interfaces before configuring LACP")
 		deletePhysicalInterfaces(switchCredentials, firstTwoSwitchInterfaces)
 
 		By("Configure LACP on switch interfaces")
+
 		lacpInterfaces, err = NetConfig.GetSwitchLagNames()
 		Expect(err).ToNot(HaveOccurred(), "Failed to get switch LAG names")
 		err = enableLACPOnSwitchInterfaces(switchCredentials, lacpInterfaces)
 		Expect(err).ToNot(HaveOccurred(), "Failed to enable LACP on the switch")
+
 		lacpConfigured = true
 
 		By("Configure physical interfaces to join aggregated ethernet interfaces")
 		configurePhysicalInterfacesForLACP(switchCredentials, firstTwoSwitchInterfaces)
+
 		physicalInterfacesConfigured = true
 
 		By("Configure LACP block firewall filter on switch")
 		configureLACPBlockFirewallFilter(switchCredentials)
 
 		By("Creating NMState instance")
+
 		err = netnmstate.CreateNewNMStateAndWaitUntilItsRunning(7 * time.Minute)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create NMState instance")
 
@@ -156,6 +173,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 		configureLACPBondInterfaces(worker0NodeName, srIovInterfacesUnderTest)
 
 		By("Verify initial LACP bonding status is working properly on node before tests")
+
 		err = verifyLACPPortState(worker0NodeName, nodeBond10Interface, lacpExpectedStateUp)
 		Expect(err).ToNot(HaveOccurred(),
 			fmt.Sprintf("LACP should be functioning properly on node %s before tests", nodeBond10Interface))
@@ -167,17 +185,18 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			lacpConfigured, physicalInterfacesConfigured)
 
 		By(fmt.Sprintf("Removing LACP bond interfaces (%s, %s)", nodeBond10Interface, nodeBond20Interface))
+
 		err := removeLACPBondInterfaces(worker0NodeName)
 		Expect(err).ToNot(HaveOccurred(), "Failed to remove LACP bond interfaces")
 
 		By("Removing NMState policies")
+
 		err = nmstate.CleanAllNMStatePolicies(APIClient)
 		Expect(err).ToNot(HaveOccurred(), "Failed to remove all NMState policies")
 	})
 
 	Context("linux pod", func() {
 		BeforeAll(func() {
-
 			nodeSelectorWorker0 := createNodeSelector(worker0NodeName)
 			nodeSelectorWorker1 := createNodeSelector(worker1NodeName)
 
@@ -194,11 +213,13 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Failed to create SR-IOV policy for client")
 
 			By("Waiting for SR-IOV and MCP to be stable after policy creation")
+
 			err = sriovoperator.WaitForSriovAndMCPStable(
 				APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 			Expect(err).ToNot(HaveOccurred(), "Failed to wait for SR-IOV and MCP to be stable")
 
 			By("Creating SriovNetworks for LACP testing")
+
 			err = sriovenv.DefineAndCreateSriovNetwork(sriovNetworkPort0Name, srIovPolicyPort0ResName, false, false)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork for port0")
 			err = sriovenv.DefineAndCreateSriovNetwork(sriovNetworkPort1Name, srIovPolicyPort1ResName, false, false)
@@ -213,11 +234,13 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		AfterAll(func() {
 			By("Cleaning all pods from test namespace")
+
 			err := namespace.NewBuilder(APIClient, tsparams.TestNamespaceName).CleanObjects(
 				netparam.DefaultTimeout, pod.GetGVR())
 			Expect(err).ToNot(HaveOccurred(), "Failed to clean all pods from test namespace")
 
 			By("Removing SR-IOV configuration")
+
 			err = sriovoperator.RemoveSriovConfigurationAndWaitForSriovAndMCPStable(
 				APIClient,
 				NetConfig.WorkerLabelEnvVar,
@@ -227,6 +250,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Failed to remove SR-IOV configuration")
 
 			By("Removing bonded Network Attachment Definition")
+
 			bondedNAD, err := nad.Pull(APIClient, bondedNADName, tsparams.TestNamespaceName)
 			if err == nil {
 				err = bondedNAD.Delete()
@@ -236,16 +260,21 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		AfterEach(func() {
 			By("Removing LACP block filter from switch interface")
+
 			if switchCredentials != nil {
 				setLACPBlockFilterOnInterface(switchCredentials, false)
 			}
 
 			By("Cleaning PFLACPMonitor from pf-status-relay-operator namespace")
+
 			err := namespace.NewBuilder(APIClient, NetConfig.PFStatusRelayOperatorNamespace).CleanObjects(
 				netparam.DefaultTimeout, pfstatus.GetPfStatusConfigurationGVR())
 			Expect(err).ToNot(HaveOccurred(), "Failed to clean PFLACPMonitor")
 
+			waitForAllPFStatusRelayDaemonsetsDeleted()
+
 			By("Deleting client-bond pod")
+
 			bondedClientPod, err := pod.Pull(APIClient, bondedClientPodName, tsparams.TestNamespaceName)
 			if err == nil {
 				_, err = bondedClientPod.DeleteAndWait(netparam.DefaultTimeout)
@@ -254,11 +283,11 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 		})
 
 		It("Verify bond active-backup recovery when PF LACP failure disables VF", reportxml.ID("83319"), func() {
-
 			By("Verifying bond interfaces exist on node before creating PFLACPMonitor")
 			waitForBondReady(worker0NodeName)
 
 			By("Creating bonded Network Attachment Definition")
+
 			err := createBondedNAD(bondedNADNameActiveBackup)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create bonded NAD")
 
@@ -272,6 +301,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Failed to create bonded client pod")
 
 			By("Verify LACP bonding status in bonded client pod")
+
 			err = checkBondingStatusInPod(bondedClientPod)
 			Expect(err).ToNot(HaveOccurred(),
 				fmt.Sprintf("LACP should be functioning properly in bonded client pod %s", bondTestInterface))
@@ -282,7 +312,6 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		It("Verify that an interface can be added and removed from the PFLACPMonitor interface monitoring",
 			reportxml.ID("83323"), func() {
-
 				By("Verifying bond interfaces exist on node before creating PFLACPMonitor")
 				waitForBondReady(worker0NodeName)
 
@@ -295,6 +324,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				verifyPFLACPMonitorLogsEventually(worker0NodeName, logTypeInitialization, []string{secondaryInterface0})
 
 				By("Redeploying PFLACPMonitor to add second PF interface")
+
 				err = updatePFLACPMonitor(pfLacpMonitorName, []string{srIovInterfacesUnderTest[0],
 					srIovInterfacesUnderTest[1]}, nodeSelectorWorker0)
 				Expect(err).ToNot(HaveOccurred(), "Failed to update PFLACPMonitor with additional interface")
@@ -307,21 +337,22 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 					"PFLACPMonitor should show both interfaces being monitored within timeout")
 
 				By("Removing one interface from PFLACPMonitor configuration")
+
 				err = updatePFLACPMonitor(pfLacpMonitorName, []string{srIovInterfacesUnderTest[0]}, nodeSelectorWorker0)
 				Expect(err).ToNot(HaveOccurred(), "Failed to remove interface from PFLACPMonitor")
 
 				By("Verifying removed interface monitoring stops with corresponding log")
+
 				removedInterface := srIovInterfacesUnderTest[1]
+
 				Eventually(func() error {
 					return verifyPFLACPMonitorInterfaceRemovalEventually(worker0NodeName, removedInterface)
 				}, 2*time.Minute, 10*time.Second).Should(Succeed(),
 					"PFLACPMonitor should stop monitoring removed interface within timeout")
-
 			})
 
 		It("Verify that deployment of a bonded pod with VFs disabled by the pf-status-relay operator",
 			reportxml.ID("83324"), func() {
-
 				By("Setting up PFLACPMonitor to initially disable VFs when LACP failure occurs")
 				setupSingleInterfacePFLACPMonitor(worker0NodeName, srIovInterfacesUnderTest[0])
 
@@ -329,20 +360,24 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				waitForVFStateChange(worker0NodeName, logTypeVFDisable, []string{srIovInterfacesUnderTest[0]})
 
 				By("Creating bonded Network Attachment Definition while VFs are disabled")
+
 				err := createBondedNAD(bondedNADNameActiveBackup)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create bonded NAD")
 
 				By("Deploying bonded client pod while VFs are in disabled state")
+
 				bondedClientPod, err := createBondedClient("bonded-client-disabled-vfs", worker0NodeName,
 					bondedNADNameActiveBackup)
 				Expect(err).ToNot(HaveOccurred(), "Bonded pod deployment should succeed even with "+
 					"initially disabled VFs")
 
 				By("Verifying bonding status shows degraded operation with one VF disabled")
+
 				err = checkBondingStatusInPod(bondedClientPod)
 				Expect(err).ToNot(HaveOccurred(), "Active-backup bonding should work with one interface disabled")
 
 				By("Verifying that one interface is disabled due to PFLACPMonitor action")
+
 				err = verifyBondingDegradedState(bondedClientPod)
 				Expect(err).ToNot(HaveOccurred(), "Should detect degraded bonding state with one interface down")
 
@@ -350,6 +385,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				waitForVFStateChange(worker0NodeName, logTypeVFEnable, []string{srIovInterfacesUnderTest[0]})
 
 				By("Verifying bonded pod network functionality after VF recovery")
+
 				err = checkBondingStatusInPod(bondedClientPod)
 				Expect(err).ToNot(HaveOccurred(), "Bonded pod should have functional "+
 					"bonding after VF recovery")
@@ -360,7 +396,6 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		It("Verify that an interface can be added to PfLACPMonitoring without LACP configured on the interface",
 			reportxml.ID("83325"), func() {
-
 				By("Verifying first bond interface exists on node before creating PFLACPMonitor")
 				waitForBondReady(worker0NodeName)
 
@@ -393,6 +428,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				verifyPFLACPMonitorLogsEventually(worker0NodeName, logTypeInitialization, []string{secondaryInterface1})
 
 				By("Validating both interfaces now show proper LACP functionality")
+
 				err = verifyLACPPortState(worker0NodeName, nodeBond10Interface, lacpExpectedStateUp)
 				Expect(err).ToNot(HaveOccurred(),
 					"Node bond interfaces should be functional after full LACP configuration")
@@ -400,7 +436,6 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		It("Verify that a PfLACPMonitoring pod does not update VFs that are set to state Enabled",
 			reportxml.ID("83326"), func() {
-
 				By(fmt.Sprintf(
 					"Deploy PFLACPMonitor CRD to monitor interface %s on %s", secondaryInterface0, worker0NodeName))
 				setupSingleInterfacePFLACPMonitor(worker0NodeName, secondaryInterface0)
@@ -412,6 +447,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 					"VFs should initially be in auto state")
 
 				By("Manually set three of the VFs to enabled mode")
+
 				err := setVFsStateOnNode(worker0NodeName, secondaryInterface0, []int{1, 2, 3}, "enable")
 				Expect(err).ToNot(HaveOccurred(), "Failed to set VFs to enabled state")
 
@@ -441,6 +477,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 					"Interface should be up, enabled VFs remain enabled, non-enabled VFs disabled")
 
 				By("Manually reset the VFs from enabled to disabled")
+
 				err = setVFsStateOnNode(worker0NodeName, secondaryInterface0, []int{1, 2, 3}, "disable")
 				Expect(err).ToNot(HaveOccurred(), "Failed to reset VFs from enabled to disabled")
 
@@ -456,7 +493,6 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		It("Verify that VFs remain in Disabled state after LACP is blocked and the PFLACPMonitor CRD is deleted",
 			reportxml.ID("83327"), func() {
-
 				By(fmt.Sprintf(
 					"Deploy PFLACPMonitor CRD to monitor interface %s on %s", secondaryInterface0, worker0NodeName))
 				setupSingleInterfacePFLACPMonitor(worker0NodeName, secondaryInterface0)
@@ -466,8 +502,11 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				waitForVFStateChange(worker0NodeName, logTypeVFDisable, []string{secondaryInterface0})
 
 				By("Delete the PFLACPMonitor CRD")
+
 				err := deletePFLACPMonitor(pfLacpMonitorName)
 				Expect(err).ToNot(HaveOccurred(), "Failed to delete PFLACPMonitor CRD")
+
+				waitForAllPFStatusRelayDaemonsetsDeleted()
 
 				By("Verify that the VFs interfaces remain in disabled state after CRD deletion")
 				Eventually(func() error {
@@ -491,6 +530,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				waitForVFStateChange(worker0NodeName, logTypeVFEnable, []string{secondaryInterface0})
 
 				By("Validating final node bond interface functionality")
+
 				err = verifyLACPPortState(worker0NodeName, nodeBond10Interface, lacpExpectedStateUp)
 				Expect(err).ToNot(HaveOccurred(),
 					"Node bond interface should be functional after complete test")
@@ -498,7 +538,6 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		It("Verify Webhook error when deploying two PFLACPMonitorCRDs with conflicting monitored interfaces",
 			reportxml.ID("83329"), func() {
-
 				By("Verifying bond interfaces exist on node before creating PFLACPMonitor")
 				waitForBondReady(worker0NodeName)
 
@@ -510,6 +549,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				verifyPFLACPMonitorLogsEventually(worker0NodeName, logTypeInitialization, []string{secondaryInterface0})
 
 				By("Deploy second PFLACPMonitor CRD with same monitored interface (should be rejected by webhook)")
+
 				conflictingMonitorName := "pflacpmonitor-duplicate"
 
 				nodeSelectorWorker0 := createNodeSelector(worker0NodeName)
@@ -524,12 +564,13 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 		It("Verify that a SriovNetworkNodePolicy can be added and deleted while the PFLACPMonitor is active",
 			reportxml.ID("83328"),
 			func() {
-
 				By("Removing existing SR-IOV configuration to start with clean interface")
+
 				err := sriov.CleanAllNetworkNodePolicies(APIClient, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to clean existing SR-IOV policies")
 
 				By("Waiting for SR-IOV and MCP to stabilize after policy cleanup")
+
 				err = sriovoperator.WaitForSriovAndMCPStable(
 					APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to wait for SR-IOV stability")
@@ -545,6 +586,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 					"PFLACPMonitor should show 'pf has no VFs' message for interface without SR-IOV policy")
 
 				By("Deploy SriovNetworkNodePolicy creating VFs")
+
 				nodeSelectorWorker0 := createNodeSelector(worker0NodeName)
 				err = createLACPSriovPolicy(
 					srIovPolicyPort0Name, srIovPolicyPort0ResName, secondaryInterface0,
@@ -552,6 +594,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetworkNodePolicy")
 
 				By("Waiting for SR-IOV and MCP to be stable after policy creation")
+
 				err = sriovoperator.WaitForSriovAndMCPStable(
 					APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to wait for SR-IOV and MCP stability")
@@ -560,10 +603,12 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				verifyPFLACPMonitorLogsEventually(worker0NodeName, logTypeInitialization, []string{secondaryInterface0})
 
 				By("Delete the SriovNetworkNodePolicy associated with monitored PF interface")
+
 				err = deleteSingleSriovPolicy()
 				Expect(err).ToNot(HaveOccurred(), "Failed to delete SriovNetworkNodePolicy")
 
 				By("Waiting for SR-IOV and MCP to stabilize after policy deletion")
+
 				err = sriovoperator.WaitForSriovAndMCPStable(
 					APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to wait for SR-IOV stability after policy deletion")
@@ -578,10 +623,12 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 				verifyPFLACPMonitorLogsEventually(worker0NodeName, logTypeInitialization, []string{secondaryInterface0})
 
 				By("Restoring SR-IOV configuration for subsequent tests")
+
 				err = sriov.CleanAllNetworkNodePolicies(APIClient, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to clean SR-IOV policies")
 
 				By("Waiting for SR-IOV and MCP to stabilize after SR-IOV policy cleanup")
+
 				err = sriovoperator.WaitForSriovAndMCPStable(
 					APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 				Expect(err).ToNot(HaveOccurred(), "Failed to wait for SR-IOV stability after policy cleanup")
@@ -593,6 +640,7 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			By("Setting up DPDK test environment")
 
 			By("Deploying PerformanceProfile is it's not installed")
+
 			err := netenv.DeployPerformanceProfile(
 				APIClient,
 				NetConfig,
@@ -603,10 +651,12 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Fail to deploy PerformanceProfile")
 
 			By("Wait for the cluster to be stable after performance profile creation")
+
 			err = cluster.WaitForMcpStable(APIClient, tsparams.MCOWaitTimeout, 2*time.Minute, NetConfig.CnfMcpLabel)
 			Expect(err).ToNot(HaveOccurred(), "Failed to wait for cluster stability")
 
 			By("Create two SriovNetworkNodePolicys type vfio-pci for DPDK")
+
 			err = createDPDKSriovPolicyFixed(
 				"sriov-policy-port0-dpdk", "resourcedpdkport0", secondaryInterface0, worker0NodeName)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create DPDK SR-IOV policy for port0")
@@ -616,15 +666,18 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Failed to create DPDK SR-IOV policy for port1")
 
 			By("Waiting until cluster MCP and SR-IOV are stable after DPDK policy creation")
+
 			err = sriovoperator.WaitForSriovAndMCPStable(
 				APIClient, tsparams.MCOWaitTimeout, time.Minute, NetConfig.CnfMcpLabel, NetConfig.SriovOperatorNamespace)
 			Expect(err).ToNot(HaveOccurred(), "Failed cluster is not stable after DPDK policies")
 
 			By("Setting selinux flag container_use_devices to 1 on all compute nodes")
+
 			err = cluster.ExecCmd(APIClient, NetConfig.WorkerLabel, "setsebool container_use_devices 1")
 			Expect(err).ToNot(HaveOccurred(), "Failed to enable selinux flag for DPDK")
 
 			By("Create two SriovNetworks for DPDK using enhanced shared utility")
+
 			err = sriovenv.DefineAndCreateSriovNetwork("sriovnetwork-dpdk-port0", "resourcedpdkport0", false, false)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create DPDK SriovNetwork for port0")
 			err = sriovenv.DefineAndCreateSriovNetwork("sriovnetwork-dpdk-port1", "resourcedpdkport1", false, false)
@@ -639,11 +692,13 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 
 		AfterAll(func() {
 			By("Cleaning all pods from test namespace")
+
 			err := namespace.NewBuilder(APIClient, tsparams.TestNamespaceName).CleanObjects(
 				netparam.DefaultTimeout, pod.GetGVR())
 			Expect(err).ToNot(HaveOccurred(), "Failed to clean all pods from test namespace")
 
 			By("Removing DPDK SR-IOV configuration")
+
 			err = sriovoperator.RemoveSriovConfigurationAndWaitForSriovAndMCPStable(
 				APIClient,
 				NetConfig.WorkerLabelEnvVar,
@@ -653,15 +708,18 @@ var _ = Describe("LACP Status Relay", Ordered, Label(tsparams.LabelSuite), Conti
 			Expect(err).ToNot(HaveOccurred(), "Failed to remove DPDK SR-IOV configuration")
 
 			By("Cleaning PFLACPMonitor from pf-status-relay-operator namespace")
+
 			err = namespace.NewBuilder(APIClient, NetConfig.PFStatusRelayOperatorNamespace).CleanObjects(
 				netparam.DefaultTimeout, pfstatus.GetPfStatusConfigurationGVR())
 			Expect(err).ToNot(HaveOccurred(), "Failed to clean PFLACPMonitor")
+
+			waitForAllPFStatusRelayDaemonsetsDeleted()
 		})
 
 		It("Verify bond active-backup recovery when PF LACP failure disables VF", reportxml.ID("83320"),
 			func() {
-
 				By("Create a DPDK client pod using the two VFs")
+
 				dpdkClientPod, err := createDPDKClientPod("dpdk-client-bond", worker0NodeName)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create DPDK client pod")
 
@@ -1214,6 +1272,29 @@ func deletePFLACPMonitor(monitorName string) error {
 	return nil
 }
 
+func waitForAllPFStatusRelayDaemonsetsDeleted() {
+	By("Waiting for all PF status relay daemonsets to be deleted")
+
+	Eventually(func() bool {
+		daemonsetList, err := APIClient.DaemonSets(NetConfig.PFStatusRelayOperatorNamespace).List(
+			context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			By(fmt.Sprintf("Error listing daemonsets: %v", err))
+
+			return false
+		}
+
+		if len(daemonsetList.Items) > 0 {
+			By(fmt.Sprintf("Daemonsets still exist: %d remaining", len(daemonsetList.Items)))
+
+			return false
+		}
+
+		return true
+	}, 1*time.Minute, 5*time.Second).Should(BeTrue(),
+		"PF status relay daemonsets should be deleted")
+}
+
 func verifyPFHasNoVFsLogs(nodeName, targetInterface string) error {
 	By(fmt.Sprintf("Verifying PFLACPMonitor logs show 'pf has no VFs' for interface %s", targetInterface))
 
@@ -1533,7 +1614,7 @@ func setLACPBlockFilterOnInterface(credentials *sriovenv.SwitchCredentials, enab
 
 	lacpInterfaces, err := NetConfig.GetSwitchLagNames()
 	if err != nil {
-		klog.V(90).Infof("Failed to get switch LAG names: %v", err)
+		By(fmt.Sprintf("Failed to get switch LAG names: %v", err))
 	}
 
 	Expect(err).ToNot(HaveOccurred(), "Failed to get switch LAG names")
@@ -1599,17 +1680,17 @@ func validateBondedTCPTraffic(clientPod *pod.Builder) {
 	output, err := clientPod.ExecCommand(command, clientPod.Definition.Spec.Containers[0].Name)
 
 	// Log the output for debugging regardless of command success/failure
-	By(fmt.Sprintf("testcmd output: %s", output.String()))
+	By(fmt.Sprintf("TCP traffic test output from pod %s:\n%s", clientPod.Definition.Name, output.String()))
 
 	// Focus on network connectivity rather than testcmd exit code
 	// testcmd can be strict and fail even when network is working
 	if err != nil {
-		By(fmt.Sprintf("testcmd exited with error (expected for strict validation), output: %s", output.String()))
+		By(fmt.Sprintf("testcmd exited with error: %v, output: %s", err, output.String()))
 	}
 
-	By("Verify bonded interface connectivity has no packet loss")
+	By("Verifying bonded interface connectivity has no packet loss")
 	Expect(output.String()).Should(ContainSubstring("0 packet loss"),
-		fmt.Sprintf("Bonded interface %s should have 0 packet loss", bondTestInterface))
+		fmt.Sprintf("Bonded interface %s should have 0 packet loss. Full output:\n%s", bondTestInterface, output.String()))
 }
 
 func getPFLACPMonitorPod(nodeName string) (*pod.Builder, error) {

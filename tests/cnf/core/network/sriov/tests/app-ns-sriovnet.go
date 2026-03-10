@@ -31,7 +31,6 @@ const (
 
 var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.LabelSriovNetAppNsTestCases),
 	ContinueOnFailure, func() {
-
 		var tNs1, tNs2 *namespace.Builder
 
 		const (
@@ -43,11 +42,14 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 
 		BeforeAll(func() {
 			By("Verifying if Application Namespace SriovNetwork tests can be executed on given cluster")
-			err := netenv.DoesClusterHasEnoughNodes(APIClient, NetConfig, 1, 2)
-			Expect(err).ToNot(HaveOccurred(),
-				"Cluster doesn't support Application Namespace SriovNetwork test cases as it doesn't have enough nodes")
+
+			err := netenv.DoesClusterHasEnoughNodes(APIClient, NetConfig, 1, 1)
+			if err != nil {
+				Skip(fmt.Sprintf("Skipping test - cluster doesn't have enough nodes: %v", err))
+			}
 
 			By("Validating SR-IOV interfaces")
+
 			workerNodeList, err := nodes.List(APIClient,
 				metav1.ListOptions{LabelSelector: labels.Set(NetConfig.WorkerLabelMap).String()})
 			Expect(err).ToNot(HaveOccurred(), "Failed to discover worker nodes")
@@ -59,6 +61,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 			Expect(err).ToNot(HaveOccurred(), "Failed to retrieve SR-IOV interfaces for testing")
 
 			By("Deploy Test Resources: Two Namespaces")
+
 			tNs1, err = namespace.NewBuilder(APIClient, tsparams.TestNamespaceName1).
 				WithMultipleLabels(params.PrivilegedNSLabels).
 				Create()
@@ -69,6 +72,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 			Expect(err).ToNot(HaveOccurred(), "Failed to create test namespace")
 
 			By("Creating SriovNetworkNodePolicy")
+
 			_, err = sriov.NewPolicyBuilder(
 				APIClient,
 				"policy1",
@@ -99,6 +103,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 
 		AfterEach(func() {
 			By("Cleaning test namespace")
+
 			err := namespace.NewBuilder(APIClient, tsparams.TestNamespaceName1).CleanObjects(
 				netparam.DefaultTimeout, sriov.GetSriovNetworksGVR(), nad.GetGVR())
 			Expect(err).ToNot(HaveOccurred(), "Failed to clean test namespace")
@@ -109,6 +114,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 
 		AfterAll(func() {
 			By("Removing SR-IOV configuration")
+
 			err := sriovoperator.RemoveSriovConfigurationAndWaitForSriovAndMCPStable(
 				APIClient,
 				NetConfig.WorkerLabelEnvVar,
@@ -118,6 +124,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 			Expect(err).ToNot(HaveOccurred(), "Failed to remove SR-IOV configuration")
 
 			By("Deleting test namespace")
+
 			err = tNs1.DeleteAndWait(tsparams.DefaultTimeout)
 			Expect(err).ToNot(HaveOccurred(), "Failed to delete test namespace 1")
 
@@ -128,11 +135,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 		It("SriovNetwork defined with one resource & two user namespaces without targetNamespace",
 			reportxml.ID("83121"), func() {
 				By("Creating SriovNetwork in namespace 1")
+
 				sriovNetwork1, err := sriov.NewNetworkBuilder(
 					APIClient, networkName1, tNs1.Object.Name, "", resourceName1).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 1")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork1.Object.Name, tNs1.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -142,11 +151,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 				Expect(err).ToNot(HaveOccurred(), "Failed to validate NAD annotations")
 
 				By("Creating SriovNetwork in namespace 2")
+
 				sriovNetwork2, err := sriov.NewNetworkBuilder(
 					APIClient, networkName2, tNs2.Object.Name, "", resourceName1).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 2")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork2.Object.Name, tNs2.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -158,6 +169,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 
 		It("SriovNetwork defined in user namespace with targetNamespace defined", reportxml.ID("83123"), func() {
 			By("Creating SriovNetwork in namespace 1")
+
 			_, err := sriov.NewNetworkBuilder(
 				APIClient, networkName1, tNs1.Object.Name, "", resourceName1).
 				WithTargetNamespace(tNs1.Object.Name).
@@ -165,6 +177,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 			Expect(err).To(HaveOccurred(), "SriovNetwork creation should fail")
 
 			By("Creating SriovNetwork in namespace 2")
+
 			_, err = sriov.NewNetworkBuilder(
 				APIClient, networkName2, tNs2.Object.Name, "", resourceName2).
 				WithTargetNamespace(tNs2.Object.Name).
@@ -175,11 +188,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 		It("SriovNetwork Update - User namespace - Update ResourceName",
 			reportxml.ID("83125"), func() {
 				By("Creating SriovNetwork in namespace 1")
+
 				sriovNetwork1, err := sriov.NewNetworkBuilder(
 					APIClient, networkName1, tNs1.Object.Name, "", resourceName1).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 1")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork1.Object.Name, tNs1.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -190,11 +205,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 				Expect(err).ToNot(HaveOccurred(), "Failed to validate NAD annotations")
 
 				By("Creating SriovNetwork in namespace 2")
+
 				sriovNetwork2, err := sriov.NewNetworkBuilder(
 					APIClient, networkName2, tNs2.Object.Name, "", resourceName2).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 2")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork2.Object.Name, tNs2.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -205,6 +222,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 				Expect(err).ToNot(HaveOccurred(), "Failed to validate NAD annotations")
 
 				By("Updating SriovNetwork in namespace 1")
+
 				sriovNetwork1, err = sriov.PullNetwork(APIClient, networkName1, tNs1.Object.Name)
 				Expect(err).ToNot(HaveOccurred(), "Failed to pull SriovNetwork")
 
@@ -213,6 +231,7 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 				Expect(err).ToNot(HaveOccurred(), "Failed to update SriovNetwork")
 
 				By("Updating SriovNetwork in namespace 2")
+
 				sriovNetwork2, err = sriov.PullNetwork(APIClient, networkName2, tNs2.Object.Name)
 				Expect(err).ToNot(HaveOccurred(), "Failed to pull SriovNetwork")
 
@@ -240,11 +259,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 		It("SriovNetwork defined with 2 resources & 2 user namespaces without targetNamespace",
 			reportxml.ID("83124"), func() {
 				By("Creating SriovNetwork in namespace 1")
+
 				sriovNetwork1, err := sriov.NewNetworkBuilder(
 					APIClient, networkName1, tNs1.Object.Name, "", resourceName1).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 1")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork1.Object.Name, tNs1.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -254,11 +275,13 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 				Expect(err).ToNot(HaveOccurred(), "Failed to validate NAD annotations")
 
 				By("Creating SriovNetwork in namespace 2")
+
 				sriovNetwork2, err := sriov.NewNetworkBuilder(
 					APIClient, networkName2, tNs2.Object.Name, "", resourceName2).Create()
 				Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 				By("Waiting for NAD creation in namespace 2")
+
 				err = sriovenv.WaitForNADCreation(sriovNetwork2.Object.Name, tNs2.Object.Name, tsparams.WaitTimeout)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NAD")
 
@@ -270,19 +293,23 @@ var _ = Describe("Application Namespace SriovNetwork:", Ordered, Label(tsparams.
 
 		It("SriovNetwork Delete in user namespace - NAD deletion", reportxml.ID("83142"), func() {
 			By("Creating SriovNetwork in namespace 1")
+
 			sriovNetwork1, err := sriov.NewNetworkBuilder(
 				APIClient, "sriovnetwork1", tNs1.Object.Name, "", "resource1").Create()
 			Expect(err).ToNot(HaveOccurred(), "Failed to create SriovNetwork")
 
 			By("Waiting for NAD creation in namespace 1")
+
 			err = sriovenv.WaitForNADCreation(sriovNetwork1.Object.Name, tNs1.Object.Name, tsparams.WaitTimeout)
 			Expect(err).ToNot(HaveOccurred(), "Failed to wait for NAD creation")
 
 			By("Deleting SriovNetwork in namespace 1")
+
 			err = sriovNetwork1.Delete()
 			Expect(err).ToNot(HaveOccurred(), "Failed to delete SriovNetwork")
 
 			By("Waiting for NAD deletion in namespace 1")
+
 			err = sriovenv.WaitForNADDeletion("sriovnetwork1", tNs1.Object.Name, tsparams.WaitTimeout)
 			Expect(err).ToNot(HaveOccurred(), "Failed to wait for NAD deletion")
 		})

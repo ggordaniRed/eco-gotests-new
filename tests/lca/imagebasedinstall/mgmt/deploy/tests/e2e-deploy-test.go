@@ -58,6 +58,60 @@ var _ = Describe(
 				createIBIOResouces(ipv4AddrFamily)
 			})
 
+		It("through IBI operator is successful in a primary IPv4 dual-stack with static networking",
+			reportxml.ID("no-testcase"), func() {
+				if !isDualStack() {
+					Skip("Cluster is not deployed with dual-stack")
+				}
+
+				if !MGMTConfig.StaticNetworking {
+					Skip("Cluster is deployed without static networking")
+				}
+
+				if MGMTConfig.SiteConfig {
+					Skip("Cluster is deployed with siteconfig operator")
+				}
+
+				if MGMTConfig.SeedClusterInfo.Proxy.HTTPProxy != "" || MGMTConfig.SeedClusterInfo.Proxy.HTTPSProxy != "" {
+					Skip("Cluster installed with proxy")
+				}
+
+				if MGMTConfig.Cluster.Info.PrimaryIPFamily != ipv4AddrFamily {
+					Skip("Cluster is not deployed with dual-stack primary IPv4")
+				}
+
+				tsparams.ReporterNamespacesToDump[MGMTConfig.Cluster.Info.ClusterName] = reporterNamespaceToDump
+
+				createSiteConfigResouces(dualstackPrimaryv4AddrFamily)
+			})
+
+		It("through IBI operator is successful in a primary IPv6 dual-stack with static networking",
+			reportxml.ID("no-testcase"), func() {
+				if !isDualStack() {
+					Skip("Cluster is not deployed with dual-stack")
+				}
+
+				if !MGMTConfig.StaticNetworking {
+					Skip("Cluster is deployed without static networking")
+				}
+
+				if MGMTConfig.SiteConfig {
+					Skip("Cluster is deployed with siteconfig operator")
+				}
+
+				if MGMTConfig.SeedClusterInfo.Proxy.HTTPProxy != "" || MGMTConfig.SeedClusterInfo.Proxy.HTTPSProxy != "" {
+					Skip("Cluster installed with proxy")
+				}
+
+				if MGMTConfig.Cluster.Info.PrimaryIPFamily != ipv6AddrFamily {
+					Skip("Cluster is not deployed with dual-stack primary IPv6")
+				}
+
+				tsparams.ReporterNamespacesToDump[MGMTConfig.Cluster.Info.ClusterName] = reporterNamespaceToDump
+
+				createSiteConfigResouces(dualstackPrimaryv6AddrFamily)
+			})
+
 		It("through siteconfig operator is successful in a primary IPv4 dual-stack "+
 			"proxy-enabled environment with DHCP networking",
 			reportxml.ID("76642"), func() {
@@ -199,13 +253,16 @@ var _ = Describe(
 			}
 
 			By("Get spoke client")
+
 			spokeClient = getSpokeClient()
 
 			By("Pull namespace created by extra manifests")
+
 			extraNamespace, err := namespace.Pull(spokeClient, extraManifestNamespace)
 			Expect(err).NotTo(HaveOccurred(), "error pulling namespace created by extra manifests")
 
 			By("Pull configmap created by extra manifests")
+
 			extraConfigmap, err := configmap.Pull(spokeClient, extraManifestConfigmap, extraNamespace.Object.Name)
 			Expect(err).NotTo(HaveOccurred(), "error pulling configmap created by extra manifests")
 			Expect(len(extraConfigmap.Object.Data)).To(Equal(1), "error: got unexpected data in configmap")
@@ -219,15 +276,18 @@ var _ = Describe(
 			}
 
 			By("Get spoke client")
+
 			spokeClient = getSpokeClient()
 
 			By("Validate the value of ExtraPartSizeMib variable")
+
 			extraPartSizeMibInt, err := strconv.ParseInt(MGMTConfig.ExtraPartSizeMib, 10, 0)
 			Expect(err).ToNot(HaveOccurred(), "failed to convert the extra partition size to int64: %s", err)
 
 			By("Validate size of extra partition")
 			Eventually(func() (string, error) {
 				execCmd := "lsblk -o size -b -n " + MGMTConfig.ExtraPartName
+
 				cmdOutput, err := cluster.ExecCmdWithStdout(spokeClient, execCmd)
 				if err != nil {
 					return "", nil
@@ -238,7 +298,6 @@ var _ = Describe(
 				}
 
 				return "", nil
-
 			}).WithTimeout(time.Minute*20).WithPolling(time.Second*5).Should(
 				Equal(strconv.Itoa(int(extraPartSizeMibInt)*1024*1024)), "error waiting for imageclusterinstall to complete")
 		})
@@ -249,6 +308,7 @@ var _ = Describe(
 			}
 
 			By("Get spoke client")
+
 			spokeClient = getSpokeClient()
 
 			By("Validate adding a certificate by referencing a CA bundle", func() {
@@ -264,9 +324,11 @@ var _ = Describe(
 			}
 
 			By("Get spoke client")
+
 			spokeClient = getSpokeClient()
 
 			By("Get spoke cluster-config configmap")
+
 			clusterConifgMap, err := configmap.Pull(spokeClient, "cluster-config-v1", "kube-system")
 			Expect(err).NotTo(HaveOccurred(), "error pulling cluster-config configmap from spoke cluster")
 

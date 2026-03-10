@@ -16,6 +16,7 @@ import (
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/argocd"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/clients"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/hive"
+	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/mco"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/nodes"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/ocm"
 	"github.com/rh-ecosystem-edge/eco-goinfra/pkg/reportxml"
@@ -32,6 +33,9 @@ import (
 const (
 	gitSiteConfigCloneDir      string = "ztp-deployment-siteconfig"
 	gitPolicyTemplatesCloneDir string = "ztp-deployment-policy-templates"
+	// ibiSeedExtraManifestMCName is a MachineConfig from the seed's extra-manifests used to
+	// validate inheritance. This MC is stable in RDS and not defined in the target siteconfig.
+	ibiSeedExtraManifestMCName string = "08-set-rcu-normal-master"
 )
 
 var (
@@ -83,9 +87,9 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 			Expect(err).ToNot(HaveOccurred(), "Failed to verify all policies are compliant for spoke %s", RANConfig.Spoke2Name)
 
 			isMultiCluster = tsparams.MultiCluster
-
 		} else {
 			klog.V(tsparams.LogLevel).Infof("Second cluster is not available")
+
 			isMultiCluster = tsparams.SingleCluster
 		}
 
@@ -122,13 +126,11 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 	})
 
 	AfterAll(func() {
-
 		// Clean up git clone directories
 		rmGitCloneDirs()
 	})
 
 	It(fmt.Sprintf("checks if deployment is %s", tsparams.MultiCluster), reportxml.ID("80498"), func() {
-
 		Expect(isMultiCluster == tsparams.SingleCluster || isMultiCluster == tsparams.MultiCluster).To(BeTrueBecause(
 			"Deployment must either be single cluster or multi cluster"))
 
@@ -141,7 +143,6 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 
 	DescribeTable("checks deployment method",
 		func(methodValue *tsparams.DeploymentType, kindValue tsparams.DeploymentType) {
-
 			Expect(*methodValue).ToNot(BeEmpty(), "deployMethod should not be empty")
 
 			if *methodValue != kindValue {
@@ -160,7 +161,6 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 
 	DescribeTable("checks policy kind",
 		func(policyValue *tsparams.PolicyType, kindValue tsparams.PolicyType) {
-
 			Expect(*policyValue).ToNot(BeEmpty(), "policyTemplate should not be empty")
 
 			if *policyValue != kindValue {
@@ -180,7 +180,6 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 
 	DescribeTable("checks cluster type",
 		func(clusterValue *tsparams.ClusterType, kindValue tsparams.ClusterType) {
-
 			Expect(*clusterValue).ToNot(BeEmpty(), "clusterKind should not be empty")
 
 			if *clusterValue != kindValue {
@@ -198,6 +197,32 @@ var _ = Describe("Cluster Deployment Types Tests", Ordered, Label(tsparams.Label
 		Entry(nil, &clusterKind, tsparams.ClusterStandard, reportxml.ID("80500")),
 	)
 
+	// Verifies that seed cluster extra-manifests are inherited by IBI-deployed spoke clusters
+	// by checking for the 08-set-rcu-normal-master MachineConfig on the spoke.
+	It("verifies seed extra-manifests are inherited by IBI deployed spoke",
+		reportxml.ID("87508"), func() {
+			// Skip if this is not an IBI deployment
+			if deploymentMethod != tsparams.DeploymentImageBasedCI {
+				Skip(fmt.Sprintf("Skipping: deployment method is %s, not %s",
+					deploymentMethod, tsparams.DeploymentImageBasedCI))
+			}
+
+			By(fmt.Sprintf("Checking if MachineConfig %s exists on the spoke cluster",
+				ibiSeedExtraManifestMCName))
+
+			_, err := mco.PullMachineConfig(Spoke1APIClient, ibiSeedExtraManifestMCName)
+
+			Expect(err).ToNot(HaveOccurred(),
+				"MachineConfig %s not found on spoke cluster. "+
+					"This indicates that extra-manifests from the seed cluster "+
+					"were not properly inherited during IBI deployment.",
+				ibiSeedExtraManifestMCName)
+
+			klog.V(tsparams.LogLevel).Infof(
+				"SUCCESS: MachineConfig %s exists on target cluster deployed via IBI. "+
+					"Extra-manifests inheritance from seed cluster is working correctly.",
+				ibiSeedExtraManifestMCName)
+		})
 })
 
 // Clean up git clone dirs if they exist and create empty dirctories for git clone targets.
